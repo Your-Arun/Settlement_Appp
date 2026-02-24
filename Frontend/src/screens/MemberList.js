@@ -4,11 +4,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-    Search, Trash2, Edit3, Phone, ChevronLeft, Shield, Wind, User, Plus
+    Search, Trash2, Edit3, Phone, ChevronLeft, Shield, Wind, User, Plus, ShieldAlert
 } from 'lucide-react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import axiosInstance from '../api/axiosInstance';
-import Toast from 'react-native-toast-message'; // 👈 Import Toast
+import Toast from 'react-native-toast-message';
 
 const MemberList = () => {
     const navigation = useNavigation();
@@ -28,11 +28,11 @@ const MemberList = () => {
             setFilteredMembers(sorted);
         } catch (error) {
             console.log("Fetch Error", error);
-            // 👇 Error Toast
             Toast.show({
                 type: 'error',
                 text1: 'Error',
-                text2: 'Failed to load members list'
+                text2: 'Failed to load members list',
+                position: 'top'
             });
         } finally {
             setLoading(false);
@@ -64,7 +64,6 @@ const MemberList = () => {
 
     // --- DELETE LOGIC ---
     const handleDelete = (id, name) => {
-        // ⚠️ Confirmation ke liye Alert zaroori hai (Yes/No Option)
         Alert.alert(
             "Delete Member",
             `Are you sure you want to delete ${name}?`,
@@ -76,21 +75,19 @@ const MemberList = () => {
                     onPress: async () => {
                         try {
                             await axiosInstance.delete(`/members/${id}`);
-
-                            // 👇 Success Toast
                             Toast.show({
                                 type: 'success',
                                 text1: 'Deleted',
-                                text2: `${name} has been removed.`
+                                text2: `${name} has been removed.`,
+                                position: 'top'
                             });
-
-                            fetchMembers(); // List refresh karein
+                            fetchMembers();
                         } catch (error) {
-                            // 👇 Error Toast
                             Toast.show({
                                 type: 'error',
                                 text1: 'Delete Failed',
-                                text2: 'Could not delete member.'
+                                text2: 'Could not delete member.',
+                                position: 'top'
                             });
                         }
                     }
@@ -109,17 +106,10 @@ const MemberList = () => {
         const roleBg = isSupervisor ? '#f3e8ff' : isAirBoy ? '#cffafe' : '#dbeafe';
         const RoleIcon = isSupervisor ? Shield : isAirBoy ? Wind : User;
 
-        // Image helper
-        const getAvatarUrl = (url) => {
-            if (!url) return `https://ui-avatars.com/api/?name=${item.name}&background=random`;
-            return url.startsWith('http') ? url : `https://ui-avatars.com/api/?name=${item.name}`;
-        };
-
         return (
             <View style={styles.card}>
                 <View style={styles.cardContent}>
                     {/* Avatar */}
-                    {/* 👇 LOGIC CHANGE: Avatar vs Letter */}
                     <View style={styles.avatarContainer}>
                         {item.avatar ? (
                             <Image
@@ -144,9 +134,26 @@ const MemberList = () => {
                             <Text style={styles.phone}>{item.phoneNumber}</Text>
                         </View>
 
-                        <View style={[styles.roleBadge, { backgroundColor: roleBg }]}>
-                            <RoleIcon size={10} color={roleColor} />
-                            <Text style={[styles.roleText, { color: roleColor }]}>{item.role}</Text>
+                        {/* ✅ UPDATED: Badge showing logic */}
+                        <View style={styles.badgeRow}>
+                            {/* Role Badge */}
+                            <View style={[styles.roleBadge, { backgroundColor: roleBg }]}>
+                                <RoleIcon size={10} color={roleColor} />
+                                <Text style={[styles.roleText, { color: roleColor }]}>{item.role}</Text>
+                            </View>
+
+                            {/* Restriction Badge Logic */}
+                            {item.nozzleRestriction === true ? (
+                                <View style={styles.restrictionBadge}>
+                                    <ShieldAlert size={10} color="#ef4444" />
+                                    <Text style={styles.restrictionText}>RESTRICTED</Text>
+                                </View>
+                            ) : item.gender === 'female' ? (
+                                <View style={[styles.restrictionBadge, { backgroundColor: '#fef3c7' }]}>
+                                    <ShieldAlert size={10} color="#f59e0b" />
+                                    <Text style={[styles.restrictionText, { color: '#f59e0b' }]}>No H5/H6</Text>
+                                </View>
+                            ) : null}
                         </View>
                     </View>
 
@@ -215,6 +222,7 @@ const MemberList = () => {
                     }
                 />
             )}
+            <Toast />
         </SafeAreaView>
     );
 };
@@ -247,39 +255,19 @@ const styles = StyleSheet.create({
     },
     cardContent: { flexDirection: 'row', alignItems: 'center' },
 
-    avatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#f1f5f9' },
-
-    infoContainer: { flex: 1, marginLeft: 15 },
-    name: { fontSize: 16, fontWeight: 'bold', color: '#1e293b' },
-    row: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
-    phone: { fontSize: 12, color: '#64748b', fontWeight: '500' },
-
-    roleBadge: {
-        flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start',
-        gap: 4, paddingHorizontal: 8, paddingVertical: 3,
-        borderRadius: 8, marginTop: 6
-    },
-    roleText: { fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase' },
-
-    actions: { flexDirection: 'row', gap: 10 },
-    actionBtn: { padding: 10, borderRadius: 10 },
-
-    emptyState: { alignItems: 'center', marginTop: 50 },
-    emptyText: { color: '#94a3b8', marginTop: 10, fontWeight: 'bold' },
     avatarContainer: {
         width: 50,
         height: 50,
         borderRadius: 25,
-        overflow: 'hidden', // Zaroori hai taaki square na dikhe
+        overflow: 'hidden',
         backgroundColor: '#f1f5f9'
     },
-
     avatarImage: {
         width: '100%',
         height: '100%'
     },
     letterAvatar: {
-        backgroundColor: '#94a3b8', // Thoda dark grey background list ke liye
+        backgroundColor: '#94a3b8',
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -288,6 +276,49 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: 'white',
     },
+
+    infoContainer: { flex: 1, marginLeft: 15 },
+    name: { fontSize: 16, fontWeight: 'bold', color: '#1e293b' },
+    row: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
+    phone: { fontSize: 12, color: '#64748b', fontWeight: '500' },
+
+    // Badge Styles
+    badgeRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 6,
+        flexWrap: 'wrap',
+    },
+
+    roleBadge: {
+        flexDirection: 'row', alignItems: 'center',
+        gap: 4, paddingHorizontal: 8, paddingVertical: 3,
+        borderRadius: 8,
+    },
+    roleText: { fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase' },
+
+    restrictionBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 8,
+        backgroundColor: '#fef2f2',
+    },
+    restrictionText: {
+        fontSize: 9,
+        fontWeight: 'bold',
+        color: '#ef4444',
+        textTransform: 'uppercase',
+    },
+
+    actions: { flexDirection: 'row', gap: 10 },
+    actionBtn: { padding: 10, borderRadius: 10 },
+
+    emptyState: { alignItems: 'center', marginTop: 50 },
+    emptyText: { color: '#94a3b8', marginTop: 10, fontWeight: 'bold' },
 });
 
 export default MemberList;

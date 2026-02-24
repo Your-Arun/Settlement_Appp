@@ -66,6 +66,7 @@ const Dashboard = () => {
   };
 
   // Bulk Assignment Logic
+
   const handleZoneTap = async (zoneId) => {
     if (selectedStaffList.length === 0) return;
 
@@ -80,17 +81,30 @@ const Dashboard = () => {
       });
       return;
     }
+    // ✅ COMPLETE NOZZLE RESTRICTION CHECK
+    const nozzleSlots = ['N1', 'N2', 'N3', 'N4', 'N5', 'N6'];
 
-    // NOZZLE 5 & 6 RESTRICTION CHECK
-    if ((zoneId === 'N5' || zoneId === 'N6') && selectedStaffList.length > 0) {
+    if (nozzleSlots.includes(zoneId) && selectedStaffList.length > 0) {
       const staff = selectedStaffList[0];
-      if (staff.gender === 'female' || staff.nozzleRestriction === true) {
+
+      // ✅ CHECK 1: Complete nozzle restriction (blocks ALL nozzles)
+      if (staff.nozzleRestriction === true) {
         Toast.show({
           type: 'error',
-          text1: '⚠️ Assignment Restriction',
-          text2: staff.gender === 'female' 
-            ? 'Female operators NOT allowed on H5/H6' 
-            : 'This operator has nozzle restriction',
+          text1: '⚠️ Completely Restricted',
+          text2: `${staff.name} cannot work on ANY nozzle. Can only be Extra/Air/Supervisor.`,
+          visibilityTime: 3500,
+          position: 'top'
+        });
+        return;
+      }
+
+      // ✅ CHECK 2: Female H5/H6 restriction (only if not completely restricted)
+      if ((zoneId === 'N5' || zoneId === 'N6') && staff.gender === 'female') {
+        Toast.show({
+          type: 'error',
+          text1: '⚠️ Female Restriction',
+          text2: `${staff.name} is female - NOT allowed on H5/H6`,
           visibilityTime: 3000,
           position: 'top'
         });
@@ -161,6 +175,7 @@ const Dashboard = () => {
     setSelectedStaffList([]);
   };
 
+
   const handleAutoAssign = async () => {
     setIsAutoAssigning(true);
     try {
@@ -183,7 +198,7 @@ const Dashboard = () => {
         });
 
         setAssignments(newAssignments);
-        
+
         // ✅ Toast instead of Alert
         let text2 = `Assigned: ${autoData.summary.assigned}/6`;
         if (autoData.summary.overtime > 0) {
@@ -196,8 +211,8 @@ const Dashboard = () => {
           text2 += ` | ⭐ Promoted`;
         }
 
-        Toast.show({ 
-          type: 'success', 
+        Toast.show({
+          type: 'success',
           text1: '✅ Auto-Assignment Complete!',
           text2: text2,
           visibilityTime: 4000,
@@ -223,8 +238,8 @@ const Dashboard = () => {
       const uri = await mapRef.current.capture();
       const base64Img = `data:image/jpeg;base64,${await ViewShot.captureRef(mapRef, { result: "base64", quality: 0.7 })}`;
       await axiosInstance.post("/save-map", { date, shift, image: base64Img, caption, assignments });
-      Toast.show({ 
-        type: 'success', 
+      Toast.show({
+        type: 'success',
         text1: 'Map Saved Successfully!',
         visibilityTime: 2000,
         position: 'top'
@@ -246,32 +261,35 @@ const Dashboard = () => {
   const assignedIds = Object.values(assignments).flat().map(s => s?.id).filter(Boolean);
   const availablePool = members.filter(s => s.available === 'present');
   const absentStaff = assignments['absent'] || [];
-  
+
   // ✅ Filter absent staff by current shift only
-  const currentShiftAbsent = absentStaff.filter(staff => 
+  const currentShiftAbsent = absentStaff.filter(staff =>
     staff.shift && staff.shift.toLowerCase() === shift.toLowerCase()
   );
 
   // ✅ UPDATED: Added showBadges parameter
   const renderStaffCircle = (staff, size = 50, showBadges = false) => {
     const isSelected = selectedStaffList.some(s => s.id === staff.id);
-    const isAssigned = assignedIds.includes(staff.id); 
-    const fontSize = size * 0.4; 
+    const isAssigned = assignedIds.includes(staff.id);
+    const fontSize = size * 0.4;
 
     return (
       <View style={{ position: 'relative' }}>
         <TouchableOpacity
           onPress={() => toggleSelection(staff)}
           style={[
-            styles.staffCircle, 
-            { width: size, height: size }, 
+            styles.staffCircle,
+            { width: size, height: size },
             isSelected && styles.selectedRing
           ]}
         >
           {staff.avatar ? (
-            <Image 
-              source={{ uri: staff.avatar }} 
-              style={styles.avatar} 
+            <Image
+              source={{ uri: staff.avatar }}
+              style={styles.avatar}
+              // ✅ Optimize loading
+              resizeMode="cover"
+              cache="force-cache" // Enable caching
             />
           ) : (
             <View style={[styles.avatar, styles.letterAvatar]}>
@@ -286,9 +304,9 @@ const Dashboard = () => {
               <Check size={10} color="white" strokeWidth={4} />
             </View>
           )}
-          
+
           {!isSelected && isAssigned && staff.available === 'present' && (
-              <View style={styles.assignedBadge} />
+            <View style={styles.assignedBadge} />
           )}
         </TouchableOpacity>
 
@@ -336,7 +354,10 @@ const Dashboard = () => {
           <Text style={styles.title}>PUMP MANAGER</Text>
           <Text style={styles.subtitle}>{date} • {shift}</Text>
         </View>
-        <TouchableOpacity onPress={() => setShift(shift === 'Morning' ? 'Evening' : 'Morning')} style={styles.shiftBtn}>
+        <TouchableOpacity
+          onPress={() => setShift(shift === 'Morning' ? 'Evening' : 'Morning')}
+          style={styles.shiftBtn}
+        >
           <RefreshCw size={16} color="white" />
         </TouchableOpacity>
       </View>
@@ -388,7 +409,7 @@ const Dashboard = () => {
             </View>
           </View>
           <TextInput placeholder="Add note..." value={caption} onChangeText={setCaption} style={styles.captionInput} />
-          
+
           {/* ✅ Absent Section - Shows ONLY current shift absent staff in Screenshot */}
           {currentShiftAbsent.length > 0 && (
             <View style={styles.absentBoxInMap}>
@@ -425,15 +446,19 @@ const Dashboard = () => {
               </TouchableOpacity>
             )}
           </View>
+
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scrollRow}>
             {availablePool.map(staff => (
               <View key={staff.id} style={styles.staffItem}>
                 {renderStaffCircle(staff, 60, false)}
                 <Text style={styles.staffName} numberOfLines={1}>{staff.name}</Text>
-                {/* ✅ Show warning for females or restricted */}
-                {(staff.gender === 'female' || staff.nozzleRestriction) && (
+
+                {/* ✅ UPDATED WARNING LOGIC */}
+                {staff.nozzleRestriction === true ? (
+                  <Text style={styles.warningText}>⚠️ RESTRICTED</Text>
+                ) : staff.gender === 'female' ? (
                   <Text style={styles.warningText}>⚠️ No H5/H6</Text>
-                )}
+                ) : null}
               </View>
             ))}
           </ScrollView>
@@ -519,8 +544,9 @@ const Dashboard = () => {
               </View>
               <ChevronRight color="#cbd5e1" />
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.settingOption} 
+
+            <TouchableOpacity
+              style={styles.settingOption}
               onPress={() => {
                 setShowSettingsModal(false);
                 Toast.show({
@@ -535,7 +561,7 @@ const Dashboard = () => {
               <View style={[styles.iconBox, { backgroundColor: '#f3e8ff' }]}><MessageSquare color="#9333ea" size={20} /></View>
               <View style={{ flex: 1 }}><Text style={styles.optionTitle}>SMS Configuration</Text><Text style={styles.optionSub}>Set morning/evening auto-send time</Text></View><ChevronRight color="#cbd5e1" />
             </TouchableOpacity>
-            
+
           </View>
         </TouchableOpacity>
       </Modal>
@@ -582,7 +608,7 @@ const styles = StyleSheet.create({
   assignedBadge: { position: 'absolute', top: 0, right: 0, backgroundColor: '#3b82f6', width: 12, height: 12, borderRadius: 6, borderWidth: 1, borderColor: 'white' },
   letterAvatar: { backgroundColor: '#cbd5e1', justifyContent: 'center', alignItems: 'center' },
   letterText: { fontWeight: '900', color: '#475569' },
-  
+
   // ✅ NEW: OT Badge
   otBadge: {
     position: 'absolute',
@@ -600,7 +626,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: 'white',
   },
-  
+
   // ✅ NEW: Promoted Supervisor Badge
   promotedBadge: {
     position: 'absolute',
@@ -615,7 +641,7 @@ const styles = StyleSheet.create({
   promotedText: {
     fontSize: 12,
   },
-  
+
   // ✅ NEW: Warning text for females/restricted
   warningText: {
     fontSize: 8,
@@ -623,7 +649,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginTop: 2,
   },
-  
+
   // ✅ Absent Box in ViewShot (for screenshot)
   absentBoxInMap: {
     width: '100%',
@@ -645,7 +671,7 @@ const styles = StyleSheet.create({
     color: '#b91c1c',
     fontWeight: '500',
   },
-  
+
   // SHARED POOL STYLES
   staffPool: { padding: 20 },
   poolHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },

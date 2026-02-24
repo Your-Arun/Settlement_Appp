@@ -1,64 +1,128 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Image, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { 
+  View, Text, TextInput, TouchableOpacity, Image, StyleSheet, 
+  ScrollView, ActivityIndicator, Alert, Linking, Switch 
+} from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import axiosInstance from '../api/axiosInstance';
 import { Feather } from '@expo/vector-icons';
-import Toast from 'react-native-toast-message'; // 👈 Import Toast
+import Toast from 'react-native-toast-message';
+import { ShieldAlert } from 'lucide-react-native';
 
 const AddMember = ({ navigation, route }) => {
-  const [loading, setLoading] = useState(false);
-  
   const memberToEdit = route.params?.memberToEdit; 
+  const [loading, setLoading] = useState(false);
 
+  // ✅ Form Data (with nozzleRestriction)
   const [formData, setFormData] = useState({
     name: memberToEdit?.name || '', 
     role: memberToEdit?.role || 'operator', 
     shift: memberToEdit?.shift || 'morning', 
     phoneNumber: memberToEdit?.phoneNumber || '',
     gender: memberToEdit?.gender || 'male',
+    nozzleRestriction: memberToEdit?.nozzleRestriction || false, // ✅ NEW
   });
 
+  // ✅ Error State for Validation
+  const [errors, setErrors] = useState({});
   const [image, setImage] = useState(null);
 
-  const pickImage = async () => {
+  // 🛡️ Helper: Validate Inputs
+  const validate = () => {
+    let newErrors = {};
+    let isValid = true;
+
+    // Name Validation
+    if (!formData.name.trim()) {
+      newErrors.name = 'Full Name is required';
+      isValid = false;
+    } else if (formData.name.length < 3) {
+      newErrors.name = 'Name must be at least 3 characters';
+      isValid = false;
+    }
+
+    // Phone Validation (Indian 10 digits)
+    const phoneRegex = /^[0-9]{10}$/;
+    if (!formData.phoneNumber) {
+      newErrors.phoneNumber = 'Phone Number is required';
+      isValid = false;
+    } else if (!phoneRegex.test(formData.phoneNumber)) {
+      newErrors.phoneNumber = 'Enter a valid 10-digit number';
+      isValid = false;
+    }
+
+    setErrors(newErrors);
+    return isValid;
+  };
+
+  // 🛡️ Helper: Handle Permission Denial
+  const handlePermissionDenied = (permissionName) => {
+    Alert.alert(
+      "Permission Required",
+      `We need ${permissionName} access to upload photos. Please enable it in settings.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Open Settings", onPress: () => Linking.openSettings() }
+      ]
+    );
+  };
+
+  // 📸 Option Picker
+  const handleImagePick = () => {
+    Alert.alert(
+      "Upload Photo",
+      "Select source",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Camera", onPress: openCamera },
+        { text: "Gallery", onPress: openGallery },
+      ]
+    );
+  };
+
+  // 📸 Camera Logic
+  const openCamera = async () => {
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
-        // 👇 Alert hata kar Toast lagaya
-        Toast.show({
-          type: 'error',
-          text1: 'Permission Denied',
-          text2: 'Sorry, we need gallery permissions!'
-        });
+        handlePermissionDenied('Camera');
         return;
       }
-
-      let result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: 'Images', 
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.5,
+      let result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true, aspect: [1, 1], quality: 0.5,
       });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        setImage(result.assets[0]);
-      }
+      if (!result.canceled) setImage(result.assets[0]);
     } catch (error) {
-      Toast.show({
-        type: 'error',
-        text1: 'Image Error',
-        text2: error.message
-      });
+      Toast.show({ type: 'error', text1: 'Error', text2: 'Could not open camera' });
     }
   };
 
+  // 🖼️ Gallery Logic
+  const openGallery = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        handlePermissionDenied('Gallery');
+        return;
+      }
+      let result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true, aspect: [1, 1], quality: 0.5,
+      });
+      if (!result.canceled) setImage(result.assets[0]);
+    } catch (error) {
+      Toast.show({ type: 'error', text1: 'Error', text2: 'Could not open gallery' });
+    }
+  };
+
+  // 🚀 Submit Logic
   const handleSubmit = async () => {
-    if (!formData.name || !formData.phoneNumber) {
-      // 👇 Validation Alert -> Toast
+    // 1. Run Validation
+    if (!validate()) {
       Toast.show({
         type: 'error',
-        text1: 'Missing Fields',
-        text2: 'Name & Phone number are required'
+        text1: 'Validation Failed',
+        text2: 'Please fix the red errors below.'
       });
       return;
     }
@@ -72,52 +136,45 @@ const AddMember = ({ navigation, route }) => {
     data.append('phoneNumber', formData.phoneNumber);
     data.append('available', 'present');
     data.append('gender', formData.gender);
+    data.append('nozzleRestriction', formData.nozzleRestriction); // ✅ NEW
 
     if (image) {
       let filename = image.uri.split('/').pop();
       let match = /\.(\w+)$/.exec(filename);
       let type = match ? `image/${match[1]}` : `image/jpeg`;
-
-      data.append('avatar', {
-        uri: image.uri,
-        name: filename,
-        type: type
-      });
+      data.append('avatar', { uri: image.uri, name: filename, type });
     }
 
     try {
       if (memberToEdit) {
-        // ✅ UPDATE LOGIC
         await axiosInstance.put(`/members/${memberToEdit._id}`, data, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
-        // 👇 Success Toast
-        Toast.show({
-          type: 'success',
-          text1: 'Updated!',
-          text2: 'Member details updated successfully.'
+        Toast.show({ 
+          type: 'success', 
+          text1: 'Updated', 
+          text2: 'Staff updated successfully',
+          position: 'top'
         });
       } else {
-        // ✅ ADD LOGIC
         await axiosInstance.post('/shifting', data, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
-        // 👇 Success Toast
-        Toast.show({
-          type: 'success',
-          text1: 'Success!',
-          text2: 'New member added successfully.'
+        Toast.show({ 
+          type: 'success', 
+          text1: 'Created', 
+          text2: 'New staff added successfully',
+          position: 'top'
         });
       }
-      
       navigation.goBack();
     } catch (error) {
-      console.error("Submit Error:", error);
-      // 👇 Error Toast
-      Toast.show({
-        type: 'error',
-        text1: 'Action Failed',
-        text2: 'Could not save member. Check server.'
+      console.error(error);
+      Toast.show({ 
+        type: 'error', 
+        text1: 'Server Error', 
+        text2: 'Something went wrong.',
+        position: 'top'
       });
     } finally {
       setLoading(false);
@@ -125,57 +182,77 @@ const AddMember = ({ navigation, route }) => {
   };
 
   const getAvatarSource = () => {
-    if (image) return { uri: image.uri }; 
-    if (memberToEdit?.avatar) return { uri: memberToEdit.avatar }; 
-    return null; 
+    if (image) return { uri: image.uri };
+    if (memberToEdit?.avatar) return { uri: memberToEdit.avatar };
+    return null;
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Feather name="chevron-left" color="#333" size={24} />
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Feather name="arrow-left" color="#333" size={24} />
         </TouchableOpacity>
-        <Text style={styles.title}>{memberToEdit ? "Edit Staff" : "New Staff"}</Text>
+        <Text style={styles.title}>{memberToEdit ? "Edit Staff" : "Add Staff"}</Text>
       </View>
 
       <View style={styles.form}>
-        <TouchableOpacity onPress={pickImage} style={styles.imagePicker}>
-          {getAvatarSource() ? (
-            <Image source={getAvatarSource()} style={styles.preview} />
-          ) : (
-            <View style={styles.placeholder}>
-              <Feather name="camera" color="#aaa" size={32} />
-              <Text style={styles.uploadText}>Upload Photo</Text>
-            </View>
-          )}
+        {/* Photo Upload */}
+        <TouchableOpacity onPress={handleImagePick} style={styles.imageWrapper}>
+          <View style={styles.imageContainer}>
+            {getAvatarSource() ? (
+              <Image source={getAvatarSource()} style={styles.preview} />
+            ) : (
+              <View style={styles.placeholder}>
+                <Feather name="camera" color="#94a3b8" size={32} />
+                <Text style={styles.uploadText}>Tap to Upload</Text>
+              </View>
+            )}
+          </View>
+          {/* Edit Icon badge */}
+          <View style={styles.editBadge}>
+            <Feather name="edit-2" size={12} color="#fff" />
+          </View>
         </TouchableOpacity>
 
-        <Text style={styles.label}>Full Name</Text>
-        <TextInput
-          placeholder="Ex: Rahul Kumar"
-          style={styles.input}
-          value={formData.name}
-          onChangeText={t => setFormData({ ...formData, name: t })}
-        />
+        {/* Name Input */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Full Name <Text style={styles.req}>*</Text></Text>
+          <TextInput
+            placeholder="Ex: Rahul Kumar"
+            style={[styles.input, errors.name && styles.inputError]}
+            value={formData.name}
+            onChangeText={t => {
+              setFormData({ ...formData, name: t });
+              if (errors.name) setErrors({...errors, name: null}); // Clear error on type
+            }}
+          />
+          {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
+        </View>
 
-        <Text style={styles.label}>Phone Number</Text>
-        <TextInput
-          placeholder="+91..."
-          keyboardType="phone-pad"
-          style={styles.input}
-          value={formData.phoneNumber}
-          onChangeText={t => setFormData({ ...formData, phoneNumber: t })}
-        />
+        {/* Phone Input */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Phone Number <Text style={styles.req}>*</Text></Text>
+          <TextInput
+            placeholder="9876543210"
+            keyboardType="phone-pad"
+            maxLength={10}
+            style={[styles.input, errors.phoneNumber && styles.inputError]}
+            value={formData.phoneNumber}
+            onChangeText={t => {
+              setFormData({ ...formData, phoneNumber: t });
+              if (errors.phoneNumber) setErrors({...errors, phoneNumber: null});
+            }}
+          />
+          {errors.phoneNumber && <Text style={styles.errorText}>{errors.phoneNumber}</Text>}
+        </View>
 
-        {/* ... (Role, Gender, Shift selectors same as before) ... */}
-        
+        {/* Selectors */}
         <Text style={styles.label}>Role</Text>
         <View style={styles.row}>
           {['operator', 'supervisor', 'air boy'].map((r) => (
             <TouchableOpacity 
-              key={r}
-              onPress={() => setFormData({ ...formData, role: r })} 
+              key={r} onPress={() => setFormData({ ...formData, role: r })} 
               style={[styles.chip, formData.role === r && styles.activeChip]}
             >
               <Text style={formData.role === r ? styles.activeText : styles.text}>
@@ -189,8 +266,7 @@ const AddMember = ({ navigation, route }) => {
         <View style={styles.row}>
           {['male', 'female'].map((g) => (
             <TouchableOpacity 
-              key={g}
-              onPress={() => setFormData({ ...formData, gender: g })} 
+              key={g} onPress={() => setFormData({ ...formData, gender: g })} 
               style={[styles.chip, formData.gender === g && styles.activeChip]}
             >
               <Text style={formData.gender === g ? styles.activeText : styles.text}>
@@ -204,8 +280,7 @@ const AddMember = ({ navigation, route }) => {
         <View style={styles.row}>
           {['morning', 'evening'].map((s) => (
             <TouchableOpacity 
-              key={s}
-              onPress={() => setFormData({ ...formData, shift: s })} 
+              key={s} onPress={() => setFormData({ ...formData, shift: s })} 
               style={[styles.chip, formData.shift === s && styles.activeChip]}
             >
               <Text style={formData.shift === s ? styles.activeText : styles.text}>
@@ -215,16 +290,53 @@ const AddMember = ({ navigation, route }) => {
           ))}
         </View>
 
+        {/* ✅ UPDATED: H5/H6 Restriction Toggle with complete restriction text */}
+        <View style={styles.restrictionCard}>
+          <View style={styles.restrictionHeader}>
+            <View style={styles.restrictionTitleRow}>
+              <ShieldAlert size={20} color={formData.nozzleRestriction ? "#ef4444" : "#94a3b8"} />
+              <Text style={styles.restrictionTitle}>Nozzle Restriction</Text>
+            </View>
+            <Switch
+              value={formData.nozzleRestriction}
+              onValueChange={(value) => setFormData({ ...formData, nozzleRestriction: value })}
+              trackColor={{ false: '#cbd5e1', true: '#fca5a5' }}
+              thumbColor={formData.nozzleRestriction ? '#ef4444' : '#f1f5f9'}
+            />
+          </View>
+          <Text style={styles.restrictionDesc}>
+            {formData.nozzleRestriction 
+              ? '🔒 COMPLETELY RESTRICTED: Cannot work on ANY nozzle (N1-N6). Can only be Extra/Air/Supervisor.' 
+              : '✅ This member can work on all nozzles'
+            }
+          </Text>
+          {formData.gender === 'female' && !formData.nozzleRestriction && (
+            <View style={styles.warningBox}>
+              <Text style={styles.warningText}>
+                ⚠️ Female operators are automatically blocked from H5/H6 only
+              </Text>
+            </View>
+          )}
+           {formData.gender === 'female' && formData.nozzleRestriction && (
+            <View style={styles.warningBox}>
+              <Text style={styles.warningText}>
+                ⚠️ Female + Restricted = Blocked from ALL nozzles
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Submit Button */}
         <TouchableOpacity
           onPress={handleSubmit}
-          style={[styles.submitBtn, loading && { opacity: 0.7 }]}
+          style={[styles.submitBtn, loading && styles.disabledBtn]}
           disabled={loading}
         >
           {loading ? (
             <ActivityIndicator color="#fff" />
           ) : (
             <Text style={styles.submitText}>
-              {memberToEdit ? "Update Member" : "Save Member"}
+              {memberToEdit ? "Update Staff Details" : "Save Staff Member"}
             </Text>
           )}
         </TouchableOpacity>
@@ -234,27 +346,97 @@ const AddMember = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  header: { padding: 20, flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 30 },
-  title: { fontSize: 24, fontWeight: '900' },
-  form: { padding: 20, gap: 15 },
-  imagePicker: {
-    alignSelf: 'center', zIndex: 10, elevation: 5, position: 'relative', 
-    width: 120, height: 120, borderRadius: 60, overflow: 'hidden', 
-    backgroundColor: '#f1f5f9', marginBottom: 20, borderWidth: 1, borderColor: '#eee'
+  container: { flex: 1, backgroundColor: '#ffffff' },
+  header: { padding: 20, flexDirection: 'row', alignItems: 'center', marginTop: 30 },
+  backBtn: { padding: 8, borderRadius: 8, backgroundColor: '#f1f5f9', marginRight: 15 },
+  title: { fontSize: 22, fontWeight: '800', color: '#1e293b' },
+  
+  form: { padding: 24, paddingBottom: 50 },
+  
+  imageWrapper: { alignSelf: 'center', marginBottom: 25 },
+  imageContainer: {
+    width: 110, height: 110, borderRadius: 55, overflow: 'hidden', 
+    backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#cbd5e1',
+    justifyContent: 'center', alignItems: 'center'
   },
   preview: { width: '100%', height: '100%' },
-  placeholder: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  uploadText: { color: '#aaa', fontSize: 10, marginTop: 5 },
-  label: { fontSize: 12, fontWeight: 'bold', color: '#64748b', marginBottom: -10, marginTop: 5, marginLeft: 5 },
-  input: { backgroundColor: '#f8fafc', padding: 15, borderRadius: 12, fontSize: 16, borderWidth: 1, borderColor: '#e2e8f0' },
-  submitBtn: { backgroundColor: '#2563eb', padding: 15, borderRadius: 12, alignItems: 'center', marginTop: 20, height: 50, justifyContent: 'center' },
-  submitText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
-  row: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
-  chip: { paddingVertical: 10, paddingHorizontal: 20, borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 25, backgroundColor: '#f8fafc' },
+  placeholder: { alignItems: 'center' },
+  uploadText: { color: '#94a3b8', fontSize: 10, marginTop: 4, fontWeight: '600' },
+  editBadge: {
+    position: 'absolute', bottom: 0, right: 5, backgroundColor: '#2563eb',
+    padding: 6, borderRadius: 15, borderWidth: 2, borderColor: '#fff'
+  },
+
+  inputGroup: { marginBottom: 15 },
+  label: { fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 6 },
+  req: { color: '#ef4444' },
+  input: { 
+    backgroundColor: '#f8fafc', padding: 14, borderRadius: 10, fontSize: 15, 
+    borderWidth: 1, borderColor: '#e2e8f0', color: '#1e293b' 
+  },
+  inputError: { borderColor: '#ef4444', backgroundColor: '#fef2f2' },
+  errorText: { color: '#ef4444', fontSize: 11, marginTop: 4, marginLeft: 2 },
+
+  row: { flexDirection: 'row', gap: 8, marginBottom: 20, flexWrap: 'wrap' },
+  chip: { 
+    paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, 
+    backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#f1f5f9' 
+  },
   activeChip: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
-  text: { color: '#333' },
-  activeText: { color: '#fff', fontWeight: 'bold' }
+  text: { color: '#64748b', fontSize: 13, fontWeight: '500' },
+  activeText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+
+  // ✅ NEW: Restriction Card Styles
+  restrictionCard: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  restrictionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  restrictionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  restrictionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  restrictionDesc: {
+    fontSize: 12,
+    color: '#64748b',
+    lineHeight: 18,
+  },
+  warningBox: {
+    backgroundColor: '#fef2f2',
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+  },
+  warningText: {
+    fontSize: 11,
+    color: '#b91c1c',
+    fontWeight: '600',
+  },
+
+  submitBtn: { 
+    backgroundColor: '#2563eb', paddingVertical: 16, borderRadius: 12, 
+    alignItems: 'center', marginTop: 10, shadowColor: '#2563eb', 
+    shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.2, shadowRadius: 8, elevation: 4
+  },
+  disabledBtn: { opacity: 0.7, backgroundColor: '#93c5fd' },
+  submitText: { color: 'white', fontWeight: 'bold', fontSize: 16, letterSpacing: 0.5 },
 });
 
 export default AddMember;

@@ -88,15 +88,21 @@ exports.deleteMember = async (req, res) => {
   }
 };
 
-// Check conditions (Gender/Restriction)
+// Check conditions (Complete Restriction + Female H5/H6)
 const canAssignToNozzle = (member, nozzleKey) => {
-  if (nozzleKey === 'N5' || nozzleKey === 'N6') {
-    // H5/H6: Must be Male AND Not Restricted
-    const isMale = member.gender && member.gender.toLowerCase() === 'male';
-    const isRestricted = member.nozzleRestriction === true; 
-    return isMale && !isRestricted;
+  // ✅ RULE 1: Complete nozzle restriction
+  if (member.nozzleRestriction === true) {
+    return false; // Blocked from ALL nozzles (N1-N6)
   }
-  return true; // N1-N4: Anyone
+  
+  // ✅ RULE 2: Female H5/H6 restriction (only if not completely restricted)
+  if (nozzleKey === 'N5' || nozzleKey === 'N6') {
+    if (member.gender && member.gender.toLowerCase() === 'female') {
+      return false; // Females blocked from H5/H6
+    }
+  }
+  
+  return true; // Allowed
 };
 
 // Shuffle array for fair rotation
@@ -104,7 +110,7 @@ const shuffle = (array) => {
   const arr = [...array];
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j] , arr[i]];
+    [arr[i], arr[j]] = [arr[j], arr[i]];
   }
   return arr;
 };
@@ -120,13 +126,11 @@ exports.autoAssign = async (req, res) => {
     // 1. FETCH MEMBERS
     const oppositeShift = shift.toLowerCase() === 'morning' ? 'evening' : 'morning';
 
-    // Primary Shift (Current)
     const primaryStaff = await Member.find({
       shift: new RegExp(`^${shift}$`, 'i'),
       available: 'present'
     });
 
-    // Backup Shift (Opposite - for OT)
     const backupStaff = await Member.find({
       shift: new RegExp(`^${oppositeShift}$`, 'i'),
       available: 'present'
@@ -136,13 +140,19 @@ exports.autoAssign = async (req, res) => {
     const getRoleGroup = (staffList, role) => 
       shuffle(staffList.filter(m => m.role.toLowerCase() === role));
 
-    // Primary shift roles
     const primarySupervisors = getRoleGroup(primaryStaff, 'supervisor');
     const primaryAirBoys = getRoleGroup(primaryStaff, 'air boy');
     const primaryOperators = getRoleGroup(primaryStaff, 'operator');
     
-    // Backup shift operators (for OT)
     const backupOperators = getRoleGroup(backupStaff, 'operator');
+
+    // ✅ FILTER: Separate restricted and unrestricted operators
+    const unrestrictedOperators = primaryOperators.filter(op => 
+      op.nozzleRestriction !== true
+    );
+    const restrictedOperators = primaryOperators.filter(op => 
+      op.nozzleRestriction === true
+    );
 
     // 3. INIT STATE
     const assignments = {
@@ -153,21 +163,26 @@ exports.autoAssign = async (req, res) => {
     };
 
     const assignedIds = new Set();
-    const overtimeNozzles = new Set(); // Track which nozzles have OT
+    const overtimeNozzles = new Set();
     
     let totalOTCount = 0;
-    const MAX_TOTAL_OT = 4;
+    const MAX_TOTAL_OT = 2;
 
-    // 4. ASSIGN SUPERVISOR (COMPULSORY - Can be operator if no supervisor)
+    // 4. ASSIGN SUPERVISOR
     if (primarySupervisors.length > 0) {
       assignments.Supervisor = primarySupervisors[0];
       assignedIds.add(primarySupervisors[0]._id.toString());
     } else {
-      // ✅ Rule 4: If no supervisor, promote an operator
-      const backupSupervisor = primaryOperators.find(op => !assignedIds.has(op._id.toString()));
+      // Promote operator (prefer unrestricted first)
+      const backupSupervisor = unrestrictedOperators.find(op => 
+        !assignedIds.has(op._id.toString())
+      ) || restrictedOperators.find(op => 
+        !assignedIds.has(op._id.toString())
+      );
+      
       if (backupSupervisor) {
         const supervisorObj = backupSupervisor.toObject();
-        supervisorObj.promotedToSupervisor = true; // Flag for info
+        supervisorObj.promotedToSupervisor = true;
         assignments.Supervisor = supervisorObj;
         assignedIds.add(supervisorObj._id.toString());
       }
@@ -202,28 +217,25 @@ exports.autoAssign = async (req, res) => {
       return false;
     };
 
-    // 7. ASSIGN NOZZLES IN PRIORITY ORDER
-    // Priority: N1, N2, N3, N4, N5, N6
-    
+    // 7. ASSIGN NOZZLES (Using ONLY unrestricted operators)
     const nozzlePriority = ['N1', 'N2', 'N3', 'N4', 'N5', 'N6'];
 
-    // PASS 1: Assign from PRIMARY SHIFT ONLY
+    // PASS 1: Assign from unrestricted operators only
     for (const nozzle of nozzlePriority) {
-      assignToNozzle(nozzle, primaryOperators, false);
+      assignToNozzle(nozzle, unrestrictedOperators, false);
     }
 
-    // PASS 2: Fill remaining with OVERTIME (with restrictions)
+    // PASS 2: Fill remaining with OVERTIME (also unrestricted only)
     if (totalOTCount < MAX_TOTAL_OT) {
+      const unrestrictedOT = backupOperators.filter(op => 
+        op.nozzleRestriction !== true
+      );
+      
       for (const nozzle of nozzlePriority) {
-        // Skip if already assigned
         if (assignments[nozzle]) continue;
-        
-        // Skip if total OT limit reached
         if (totalOTCount >= MAX_TOTAL_OT) break;
 
-        // ✅ Rule 3: Check OT pair restrictions
         let canUseOT = true;
-
         if (nozzle === 'N1' && overtimeNozzles.has('N2')) canUseOT = false;
         if (nozzle === 'N2' && overtimeNozzles.has('N1')) canUseOT = false;
         if (nozzle === 'N3' && overtimeNozzles.has('N4')) canUseOT = false;
@@ -232,13 +244,19 @@ exports.autoAssign = async (req, res) => {
         if (nozzle === 'N6' && overtimeNozzles.has('N5')) canUseOT = false;
 
         if (canUseOT) {
-          assignToNozzle(nozzle, backupOperators, true);
+          assignToNozzle(nozzle, unrestrictedOT, true);
         }
       }
     }
 
     // 8. ASSIGN EXTRA OPERATOR
-    const extraCandidate = primaryOperators.find(op => !assignedIds.has(op._id.toString()));
+    // ✅ PRIORITY: Restricted operators first, then unrestricted
+    const extraCandidate = restrictedOperators.find(op => 
+      !assignedIds.has(op._id.toString())
+    ) || unrestrictedOperators.find(op => 
+      !assignedIds.has(op._id.toString())
+    );
+    
     if (extraCandidate) {
       assignments.Extra = extraCandidate.toObject();
       assignedIds.add(extraCandidate._id.toString());
@@ -256,6 +274,8 @@ exports.autoAssign = async (req, res) => {
         assignments,
         summary: {
           totalOperators: primaryOperators.length,
+          unrestrictedOperators: unrestrictedOperators.length,
+          restrictedOperators: restrictedOperators.length,
           assigned: assignedCount,
           overtime: totalOTCount,
           extra: assignments.Extra ? 1 : 0,
@@ -269,6 +289,7 @@ exports.autoAssign = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
 
 
 // --- MAP SAVING (EXISTING + UPDATED) ---

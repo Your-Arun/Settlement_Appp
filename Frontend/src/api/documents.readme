@@ -1,0 +1,7 @@
+Abhi ka current logic ye hai:
+Restrictions:
+Agar nozzleRestriction === true hai, to wo N1 se N6 kisi par bhi nahi lagega.
+Agar Female hai, to wo N5 aur N6 par nahi lagegi.
+Assignment Order: Pehle Supervisor -> Phir Air Boy -> Phir Nozzles -> End mein Extra.
+OT Logic: Maximum 2 OT allowed hain, aur ek hi machine (jaise N1-N2) par dono OT nahi ho sakte.
+Extra: Extra position ke liye Restricted logo ko pehle priority di ja rahi hai (kyunki wo nozzle pe nahi lag sakte).
