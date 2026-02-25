@@ -1,11 +1,12 @@
 import React, { useState, useCallback } from 'react';
 import {
-    View, Text, FlatList, TouchableOpacity, Image, Alert, StyleSheet, TextInput, RefreshControl, ActivityIndicator
+    View, Text, FlatList, TouchableOpacity,  Alert, StyleSheet, TextInput, RefreshControl, ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
     Search, Trash2, Edit3, Phone, ChevronLeft, Shield, Wind, User, Plus, ShieldAlert
 } from 'lucide-react-native';
+import { Image } from 'expo-image'; 
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import axiosInstance from '../api/axiosInstance';
 import Toast from 'react-native-toast-message';
@@ -113,9 +114,12 @@ const MemberList = () => {
                     <View style={styles.avatarContainer}>
                         {item.avatar ? (
                             <Image
-                                source={{ uri: item.avatar }}
-                                style={styles.avatarImage}
-                            />
+                            source={{ uri: item.avatar }}
+                            style={styles.avatarImage}
+                            contentFit="cover"       
+                            transition={500}          
+                            cachePolicy="memory-disk" 
+                        />
                         ) : (
                             <View style={[styles.avatarImage, styles.letterAvatar]}>
                                 <Text style={styles.letterText}>

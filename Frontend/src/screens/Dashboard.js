@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, Image, Alert, StyleSheet, Modal, TextInput, ActivityIndicator
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, TextInput, ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -12,6 +12,7 @@ import {
 import ViewShot from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import Toast from 'react-native-toast-message';
+import { Image } from 'expo-image';
 import axiosInstance from '../api/axiosInstance';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 
@@ -291,9 +292,9 @@ const Dashboard = () => {
             <Image
               source={{ uri: staff.avatar }}
               style={styles.avatar}
-              // ✅ Optimize loading
-              resizeMode="cover"
-              cache="force-cache" // Enable caching
+              contentFit="cover"
+              transition={200}
+              cachePolicy="memory-disk"
             />
           ) : (
             <View style={[styles.avatar, styles.letterAvatar]}>
@@ -436,7 +437,7 @@ const Dashboard = () => {
           </TouchableOpacity>
           <TouchableOpacity onPress={handleSaveMap} style={[styles.btn, styles.saveBtn]}>
             <Save color="white" size={20} />
-            <Text style={styles.btnText}>Save</Text>
+            <Text style={styles.btnText}>Save & Share</Text>
           </TouchableOpacity>
         </View>
 

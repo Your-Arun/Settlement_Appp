@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, Image, StyleSheet,
+  View, Text, TextInput, TouchableOpacity,  StyleSheet,
   ScrollView, ActivityIndicator, Alert, Linking, Switch
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import axiosInstance from '../api/axiosInstance';
 import { Feather } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import Toast from 'react-native-toast-message';
 import { ShieldAlert } from 'lucide-react-native';
 
@@ -203,7 +204,13 @@ const AddMember = ({ navigation, route }) => {
         <TouchableOpacity onPress={handleImagePick} style={styles.imageWrapper}>
           <View style={styles.imageContainer}>
             {getAvatarSource() ? (
-              <Image source={getAvatarSource()} style={styles.preview} />
+              <Image 
+              source={getAvatarSource()} 
+              style={styles.preview} 
+              contentFit="cover"
+              transition={300}
+              cachePolicy="memory-disk" 
+          />
             ) : (
               <View style={styles.placeholder}>
                 <Feather name="camera" color="#94a3b8" size={32} />

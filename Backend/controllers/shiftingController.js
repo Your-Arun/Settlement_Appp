@@ -24,10 +24,10 @@ exports.addMember = async (req, res) => {
       phoneNumber: req.body.phoneNumber,
       available: 'present',
       gender: req.body.gender || 'male',
-      nozzleRestriction: req.body.nozzleRestriction === 'true' || 
-                         req.body.nozzleRestriction === true,
+      nozzleRestriction: req.body.nozzleRestriction === 'true' ||
+        req.body.nozzleRestriction === true,
       hangingRestriction: req.body.hangingRestriction === 'true' ||  // ✅ NEW
-                          req.body.hangingRestriction === true,
+        req.body.hangingRestriction === true,
       avatar: req.file ? req.file.path : null
     });
 
@@ -60,10 +60,10 @@ exports.updateMember = async (req, res) => {
       shift: req.body.shift,
       phoneNumber: req.body.phoneNumber,
       gender: req.body.gender,
-      nozzleRestriction: req.body.nozzleRestriction === 'true' || 
-                         req.body.nozzleRestriction === true,
+      nozzleRestriction: req.body.nozzleRestriction === 'true' ||
+        req.body.nozzleRestriction === true,
       hangingRestriction: req.body.hangingRestriction === 'true' ||  // ✅ NEW
-                          req.body.hangingRestriction === true,
+        req.body.hangingRestriction === true,
     };
 
     if (req.file) {
@@ -93,16 +93,12 @@ exports.deleteMember = async (req, res) => {
   }
 };
 
-// ========================================
-// COMPLETE FINAL BACKEND - All Requirements
-// ========================================
-
 const canAssignToNozzle = (member, nozzleKey) => {
   // RULE 1: Complete nozzle restriction (N1-N6 blocked)
   if (member.nozzleRestriction === true) {
     return false;
   }
-  
+
   // RULE 2 & 3: H5/H6 restrictions (Female OR hangingRestriction)
   if (nozzleKey === 'N5' || nozzleKey === 'N6') {
     // Female blocked from H5/H6
@@ -114,7 +110,7 @@ const canAssignToNozzle = (member, nozzleKey) => {
       return false;
     }
   }
-  
+
   return true; // Allowed
 };
 
@@ -128,6 +124,9 @@ const shuffle = (array) => {
   return arr;
 };
 
+
+//auto assign
+
 exports.autoAssign = async (req, res) => {
   try {
     const { shift, date } = req.body;
@@ -136,7 +135,7 @@ exports.autoAssign = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Shift is required' });
     }
 
-    // 1. FETCH MEMBERS
+    // 1. FETCH DATA
     const oppositeShift = shift.toLowerCase() === 'morning' ? 'evening' : 'morning';
 
     const primaryStaff = await Member.find({
@@ -149,232 +148,206 @@ exports.autoAssign = async (req, res) => {
       available: 'present'
     });
 
-    // 2. ORGANIZE BY ROLES
+    // 2. ORGANIZE GROUPS
     const getRoleGroup = (staffList, role) => 
       shuffle(staffList.filter(m => m.role.toLowerCase() === role));
 
     const primarySupervisors = getRoleGroup(primaryStaff, 'supervisor');
     const primaryAirBoys = getRoleGroup(primaryStaff, 'air boy');
-    const primaryOperators = getRoleGroup(primaryStaff, 'operator');
+    const primaryOperators = getRoleGroup(primaryStaff, 'operator'); // All Primary Ops
     
     const backupAirBoys = getRoleGroup(backupStaff, 'air boy');
     const backupOperators = getRoleGroup(backupStaff, 'operator');
 
-    // Filter Eligible vs Restricted
-    const eligibleOperators = primaryOperators.filter(op => 
-      op.nozzleRestriction !== true
-    );
-    const restrictedOperators = primaryOperators.filter(op => 
-      op.nozzleRestriction === true
-    );
-
     // 3. INIT STATE
     const assignments = {
-      Supervisor: null, 
-      Air: null,
+      Supervisor: null, Air: null,
       N1: null, N2: null, N3: null, N4: null, N5: null, N6: null,
       Extra: null
     };
-
     const assignedIds = new Set();
     const overtimeNozzles = new Set();
-    
     let totalOTCount = 0;
     const MAX_TOTAL_OT = 3; 
 
-    // 4. ASSIGN SUPERVISOR
+    // Helper to check assignment status
+    const isAssigned = (id) => assignedIds.has(id.toString());
+
+    // ============================================================
+    // PHASE 1: FILL WITH PRIMARY STAFF (Strict Priority)
+    // ============================================================
+
+    // 1.1 Assign Supervisor (Primary)
     if (primarySupervisors.length > 0) {
-      const sup = primarySupervisors[0];
-      assignments.Supervisor = sup.toObject();
-      assignedIds.add(sup._id.toString());
-    } else {
-      // Promote operator
-      const promotedSupervisor = eligibleOperators.find(op => 
-        !assignedIds.has(op._id.toString())
-      ) || restrictedOperators.find(op => 
-        !assignedIds.has(op._id.toString())
-      );
-      
-      if (promotedSupervisor) {
-        const supervisorObj = promotedSupervisor.toObject();
-        supervisorObj.promotedToSupervisor = true;
-        assignments.Supervisor = supervisorObj;
-        assignedIds.add(supervisorObj._id.toString());
-      }
+      const s = primarySupervisors[0];
+      assignments.Supervisor = s.toObject();
+      assignedIds.add(s._id.toString());
     }
 
-    // 5. ASSIGN AIR BOY (Primary -> Backup -> Promote)
-    let airBoyAssigned = false;
-
-    // Try Primary
-    const primaryAir = primaryAirBoys.find(ab => !assignedIds.has(ab._id.toString()));
-    if (primaryAir) {
-      assignments.Air = primaryAir.toObject();
-      assignedIds.add(primaryAir._id.toString());
-      airBoyAssigned = true;
+    // 1.2 Assign Air Boy (Primary Only - for now)
+    if (primaryAirBoys.length > 0) {
+      const a = primaryAirBoys[0];
+      assignments.Air = a.toObject();
+      assignedIds.add(a._id.toString());
     }
 
-    // Try Backup (OT)
-    if (!airBoyAssigned) {
-      const backupAir = backupAirBoys.find(ab => !assignedIds.has(ab._id.toString()));
-      if (backupAir) {
-        const airObj = backupAir.toObject();
-        airObj.name = `${airObj.name} (OT)`;
-        airObj.isOvertime = true;
-        assignments.Air = airObj;
-        assignedIds.add(backupAir._id.toString());
-        totalOTCount++;
-        airBoyAssigned = true;
-      }
-    }
-
-    // Promote Operator (Priority to restricted)
-    if (!airBoyAssigned) {
-      const promotedAir = restrictedOperators.find(op => !assignedIds.has(op._id.toString())) 
-                       || eligibleOperators.find(op => !assignedIds.has(op._id.toString()));
-      
-      if (promotedAir) {
-        const airObj = promotedAir.toObject();
-        airObj.promotedToAir = true;
-        assignments.Air = airObj;
-        assignedIds.add(promotedAir._id.toString());
-      }
-    }
-
-    // ------------------------------------------------------------------
-    // 6. ✅ PRIORITY STEP: COMPULSORY HANGING (N5 or N6)
-    // ------------------------------------------------------------------
-    // We pick N5 or N6 randomly to fill first
+    // 1.3 Assign Compulsory Hanging (Primary eligible male)
+    // We prioritize filling H5/N6 with a capable Primary Operator first
     const hangingPriority = Math.random() < 0.5 ? ['N5', 'N6'] : ['N6', 'N5'];
-    
-    // Helper function to check if operator is valid for Hanging (Male + No Hanging Restriction)
-    const isHangingEligible = (op) => 
-      op.gender?.toLowerCase() !== 'female' && op.hangingRestriction !== true;
+    const isHangingEligible = (op) => op.gender?.toLowerCase() !== 'female' && op.hangingRestriction !== true;
 
-    // Try to find a Primary operator for hanging FIRST
-    let hangingFilled = false;
-    
     for (const hNozzle of hangingPriority) {
-      const candidate = eligibleOperators.find(op => 
-        !assignedIds.has(op._id.toString()) && 
-        canAssignToNozzle(op, hNozzle) // This includes gender/hanging restriction checks
+      const candidate = primaryOperators.find(op => 
+        !isAssigned(op._id) && 
+        canAssignToNozzle(op, hNozzle)
       );
-
       if (candidate) {
         assignments[hNozzle] = candidate.toObject();
         assignedIds.add(candidate._id.toString());
-        hangingFilled = true;
-        break; // Found one, stop looking for compulsory hanging
+        break; // Filled one compulsory hanging
       }
     }
 
-    // IF NOT FILLED BY PRIMARY, FORCE OT FOR HANGING
-    if (!hangingFilled && totalOTCount < MAX_TOTAL_OT) {
-       for (const hNozzle of hangingPriority) {
-          const backupCandidate = backupOperators.find(op => 
-             !assignedIds.has(op._id.toString()) && 
-             op.nozzleRestriction !== true && // Not completely restricted
-             isHangingEligible(op) // Must be male/no hanging restriction
-          );
-
-          if (backupCandidate) {
-            const staffObj = backupCandidate.toObject();
-            staffObj.name = `${staffObj.name} (OT)`;
-            staffObj.isOvertime = true;
-            
-            assignments[hNozzle] = staffObj;
-            assignedIds.add(staffObj._id.toString());
-            overtimeNozzles.add(hNozzle);
-            totalOTCount++;
-            hangingFilled = true;
-            break;
-          }
-       }
-    }
-
-    // ------------------------------------------------------------------
-
-    // 7. HELPER: General Assign
-    const assignToNozzle = (nozzleKey, operators, isOT = false) => {
-      // If nozzle is already filled (by Compulsory step), skip
-      if (assignments[nozzleKey]) return false;
-
-      const candidate = operators.find(op => 
-        !assignedIds.has(op._id.toString()) && canAssignToNozzle(op, nozzleKey)
-      );
-
-      if (candidate) {
-        let staffObj = candidate.toObject();
-        if (isOT) {
-          staffObj.name = `${staffObj.name} (OT)`;
-          staffObj.isOvertime = true;
-          overtimeNozzles.add(nozzleKey);
-          totalOTCount++;
-        }
-        assignments[nozzleKey] = staffObj;
-        assignedIds.add(staffObj._id.toString());
-        return true;
-      }
-      return false;
-    };
-
-    // 8. ASSIGN REMAINING NOZZLES (N1-N6) - Primary
-    // (Note: H5 or N6 might already be filled, loop will skip them)
-    const nozzlePriority = ['N1', 'N2', 'N3', 'N4', 'N5', 'N6']; 
-
+    // 1.4 Assign Remaining Nozzles (Primary)
+    const nozzlePriority = ['N1', 'N2', 'N3', 'N4', 'N5', 'N6'];
     for (const nozzle of nozzlePriority) {
-      assignToNozzle(nozzle, eligibleOperators, false);
+      if (assignments[nozzle]) continue; // Skip if filled by hanging step
+
+      const candidate = primaryOperators.find(op => 
+        !isAssigned(op._id) && 
+        canAssignToNozzle(op, nozzle)
+      );
+      if (candidate) {
+        assignments[nozzle] = candidate.toObject();
+        assignedIds.add(candidate._id.toString());
+      }
     }
 
-    // 9. ASSIGN EXTRA (Before OT)
-    const extraCandidate = restrictedOperators.find(op => 
-      !assignedIds.has(op._id.toString())
-    ) || eligibleOperators.find(op => 
-      !assignedIds.has(op._id.toString())
-    );
+    // ============================================================
+    // PHASE 2: INTERNAL PROMOTION (Fill gaps with leftover Primary)
+    // ============================================================
     
+    // Agar Primary Operator bacha hai, aur Supervisor/Air Boy khali hai, to promote karo
+    // (Taaki hum bahar se OT na bulaye agar ghar me log hain)
+    
+    // 2.1 Promote to Supervisor
+    if (!assignments.Supervisor) {
+      const candidate = primaryOperators.find(op => !isAssigned(op._id));
+      if (candidate) {
+        const sObj = candidate.toObject();
+        sObj.promotedToSupervisor = true;
+        assignments.Supervisor = sObj;
+        assignedIds.add(candidate._id.toString());
+      }
+    }
+
+    // 2.2 Promote to Air Boy
+    if (!assignments.Air) {
+      // Prefer restricted operator for Air (since they can't nozzle)
+      const candidate = primaryOperators.find(op => !isAssigned(op._id) && op.nozzleRestriction === true) 
+                     || primaryOperators.find(op => !isAssigned(op._id));
+      if (candidate) {
+        const aObj = candidate.toObject();
+        aObj.promotedToAir = true;
+        assignments.Air = aObj;
+        assignedIds.add(candidate._id.toString());
+      }
+    }
+
+    // ============================================================
+    // PHASE 3: ASSIGN EXTRA (If anyone is still left)
+    // ============================================================
+    const extraCandidate = primaryOperators.find(op => !isAssigned(op._id));
     if (extraCandidate) {
       assignments.Extra = extraCandidate.toObject();
       assignedIds.add(extraCandidate._id.toString());
     }
 
-    // 10. USE OT FOR REMAINING NOZZLES
-    if (assignments.Extra && totalOTCount < MAX_TOTAL_OT) {
-      const eligibleOT = backupOperators.filter(op => 
-        op.nozzleRestriction !== true
-      );
-      
-      for (const nozzle of nozzlePriority) {
-        if (assignments[nozzle]) continue;
-        if (totalOTCount >= MAX_TOTAL_OT) break;
+    // ============================================================
+    // PHASE 4: ASSIGN OT (ONLY IF NO EXTRA)
+    // ============================================================
+    
+    // 🛑 CRITICAL CHECK: Agar Extra banda hai, to OT allowed nahi hai.
+    if (!assignments.Extra) {
 
-        // Check OT pair blocking
-        let canUseOT = true;
-        if (nozzle === 'N1' && overtimeNozzles.has('N2')) canUseOT = false;
-        if (nozzle === 'N2' && overtimeNozzles.has('N1')) canUseOT = false;
-        if (nozzle === 'N3' && overtimeNozzles.has('N4')) canUseOT = false;
-        if (nozzle === 'N4' && overtimeNozzles.has('N3')) canUseOT = false;
-        if (nozzle === 'N5' && overtimeNozzles.has('N6')) canUseOT = false;
-        if (nozzle === 'N6' && overtimeNozzles.has('N5')) canUseOT = false;
+      // 4.1 OT for Air Boy (Backup Shift)
+      if (!assignments.Air && totalOTCount < MAX_TOTAL_OT) {
+        const backupAir = backupAirBoys.find(ab => !assignedIds.has(ab._id.toString()));
+        if (backupAir) {
+          const airObj = backupAir.toObject();
+          airObj.name = `${airObj.name} (OT)`;
+          airObj.isOvertime = true;
+          assignments.Air = airObj;
+          assignedIds.add(backupAir._id.toString());
+          totalOTCount++;
+        }
+      }
 
-        if (canUseOT) {
-          assignToNozzle(nozzle, eligibleOT, true);
+      // 4.2 OT for Hanging (Compulsory)
+      // Check if H5/H6 are empty. If yes, fill with Backup Operator.
+      for (const hNozzle of hangingPriority) {
+        if (!assignments[hNozzle] && totalOTCount < MAX_TOTAL_OT) {
+          const backupOp = backupOperators.find(op => 
+            !isAssigned(op._id) && 
+            op.nozzleRestriction !== true && 
+            isHangingEligible(op)
+          );
+          if (backupOp) {
+            const opObj = backupOp.toObject();
+            opObj.name = `${opObj.name} (OT)`;
+            opObj.isOvertime = true;
+            assignments[hNozzle] = opObj;
+            assignedIds.add(backupOp._id.toString());
+            overtimeNozzles.add(hNozzle);
+            totalOTCount++;
+            break; // Filled one compulsory
+          }
+        }
+      }
+
+      // 4.3 OT for Remaining Nozzles
+      if (totalOTCount < MAX_TOTAL_OT) {
+        const eligibleOT = backupOperators.filter(op => op.nozzleRestriction !== true);
+        
+        for (const nozzle of nozzlePriority) {
+          if (assignments[nozzle]) continue;
+          if (totalOTCount >= MAX_TOTAL_OT) break;
+
+          // Check OT Pair Blocking
+          let canUseOT = true;
+          if (nozzle === 'N1' && overtimeNozzles.has('N2')) canUseOT = false;
+          if (nozzle === 'N2' && overtimeNozzles.has('N1')) canUseOT = false;
+          if (nozzle === 'N3' && overtimeNozzles.has('N4')) canUseOT = false;
+          if (nozzle === 'N4' && overtimeNozzles.has('N3')) canUseOT = false;
+          if (nozzle === 'N5' && overtimeNozzles.has('N6')) canUseOT = false;
+          if (nozzle === 'N6' && overtimeNozzles.has('N5')) canUseOT = false;
+
+          if (canUseOT) {
+            const otCandidate = eligibleOT.find(op => !isAssigned(op._id) && canAssignToNozzle(op, nozzle));
+            if (otCandidate) {
+              const otObj = otCandidate.toObject();
+              otObj.name = `${otObj.name} (OT)`;
+              otObj.isOvertime = true;
+              assignments[nozzle] = otObj;
+              assignedIds.add(otCandidate._id.toString());
+              overtimeNozzles.add(nozzle);
+              totalOTCount++;
+            }
+          }
         }
       }
     }
 
-    // 11. RESPONSE
-    const assignedCount = nozzlePriority.reduce((acc, key) => 
-      assignments[key] ? acc + 1 : acc, 0
-    );
+    // ============================================================
+    // 5. RESPONSE
+    // ============================================================
+    const assignedCount = nozzlePriority.reduce((acc, key) => assignments[key] ? acc + 1 : acc, 0);
 
     res.json({
       success: true,
       data: {
         assignments,
         summary: {
-          totalOperators: primaryOperators.length,
-          eligibleOperators: eligibleOperators.length,
           assigned: assignedCount,
           overtime: totalOTCount,
           extra: assignments.Extra ? 1 : 0,
@@ -388,7 +361,7 @@ exports.autoAssign = async (req, res) => {
     console.error('Auto-assign error:', err);
     res.status(500).json({ success: false, message: err.message });
   }
-};2786
+};
 
 // --- MAP SAVING (EXISTING + UPDATED) ---
 
@@ -407,10 +380,10 @@ exports.saveMap = async (req, res) => {
     // 2. Save/Update in DB
     const updated = await MapSnapshot.findOneAndUpdate(
       { date, shift },
-      { 
+      {
         image: uploadRes.secure_url,
         caption: caption || '',
-        assignments: assignments || {} 
+        assignments: assignments || {}
       },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
@@ -443,30 +416,30 @@ exports.deleteMap = async (req, res) => {
 // --- SETTINGS & SMS (EXISTING) ---
 
 exports.updateSettings = async (req, res) => {
-    try {
-        const { morningTime, eveningTime } = req.body;
-        const settings = await Settings.findOneAndUpdate({}, 
-            { morningTime, eveningTime }, 
-            { new: true, upsert: true }
-        );
-        
-        // Restart Cron Jobs with new time
-        await restartScheduler();
-        
-        res.json({ success: true, settings });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+  try {
+    const { morningTime, eveningTime } = req.body;
+    const settings = await Settings.findOneAndUpdate({},
+      { morningTime, eveningTime },
+      { new: true, upsert: true }
+    );
+
+    // Restart Cron Jobs with new time
+    await restartScheduler();
+
+    res.json({ success: true, settings });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };
 
 exports.testSms = async (req, res) => {
-    try {
-        const { shift } = req.body;
-        await sendShiftReport(shift);
-        res.json({ success: true, message: "SMS Triggered" });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+  try {
+    const { shift } = req.body;
+    await sendShiftReport(shift);
+    res.json({ success: true, message: "SMS Triggered" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };
 
 // NEW: Get Dashboard Stats
@@ -475,7 +448,7 @@ exports.getStats = async (req, res) => {
     const totalMembers = await Member.countDocuments();
     const presentToday = await Member.countDocuments({ available: 'present' });
     const absentToday = await Member.countDocuments({ available: 'absent' });
-    
+
     const operators = await Member.countDocuments({ role: 'operator' });
     const supervisors = await Member.countDocuments({ role: 'supervisor' });
     const airBoys = await Member.countDocuments({ role: 'air boy' });
@@ -486,9 +459,9 @@ exports.getStats = async (req, res) => {
     const maleOperators = await Member.countDocuments({ role: 'operator', gender: 'male' });
     const femaleOperators = await Member.countDocuments({ role: 'operator', gender: 'female' });
 
-    const restrictedOperators = await Member.countDocuments({ 
-      role: 'operator', 
-      nozzleRestriction: true 
+    const restrictedOperators = await Member.countDocuments({
+      role: 'operator',
+      nozzleRestriction: true
     });
 
     res.json({
@@ -498,7 +471,7 @@ exports.getStats = async (req, res) => {
         byRole: { operators, supervisors, airBoys },
         byShift: { morning: morningShift, evening: eveningShift },
         byGender: { male: maleOperators, female: femaleOperators },
-        restrictions: { 
+        restrictions: {
           nozzle56Restricted: restrictedOperators,
           nozzle56Eligible: maleOperators - restrictedOperators
         }
