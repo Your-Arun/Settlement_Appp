@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, TextInput, ActivityIndicator
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, TextInput, ActivityIndicator, Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -15,6 +15,8 @@ import Toast from 'react-native-toast-message';
 import { Image } from 'expo-image';
 import axiosInstance from '../api/axiosInstance';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
+// 👇 1. Import DatePicker
+import DateTimePicker from '@react-native-community/datetimepicker'; 
 
 const Dashboard = () => {
   const navigation = useNavigation();
@@ -35,6 +37,9 @@ const Dashboard = () => {
   const [selectedStaffList, setSelectedStaffList] = useState([]);
   const [isAutoAssigning, setIsAutoAssigning] = useState(false);
 
+  // 👇 2. Date Picker State
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
   // --- DATA LOADING ---
   useFocusEffect(
     useCallback(() => {
@@ -54,20 +59,29 @@ const Dashboard = () => {
     }
   };
 
+  // 👇 3. Handle Date Change
+  const handleDateChange = (event, selectedDate) => {
+    setShowDatePicker(false); // Hide picker
+    if (selectedDate) {
+      // Format to YYYY-MM-DD
+      const formattedDate = selectedDate.toISOString().split('T')[0];
+      setDate(formattedDate);
+    }
+  };
+
   // Toggle Selection Logic
   const toggleSelection = (staff) => {
     setSelectedStaffList(prev => {
       const isSelected = prev.find(s => s.id === staff.id);
       if (isSelected) {
-        return prev.filter(s => s.id !== staff.id); // Remove
+        return prev.filter(s => s.id !== staff.id); 
       } else {
-        return [...prev, staff]; // Add
+        return [...prev, staff]; 
       }
     });
   };
 
   // Bulk Assignment Logic
-
   const handleZoneTap = async (zoneId) => {
     if (selectedStaffList.length === 0) return;
 
@@ -82,13 +96,12 @@ const Dashboard = () => {
       });
       return;
     }
-    // ✅ COMPLETE NOZZLE RESTRICTION CHECK
+    
     const nozzleSlots = ['N1', 'N2', 'N3', 'N4', 'N5', 'N6'];
 
     if (nozzleSlots.includes(zoneId) && selectedStaffList.length > 0) {
       const staff = selectedStaffList[0];
 
-      // RULE 1: Complete nozzle restriction
       if (staff.nozzleRestriction === true) {
         Toast.show({
           type: 'error',
@@ -100,7 +113,6 @@ const Dashboard = () => {
         return;
       }
 
-      // RULE 2 & 3: H5/H6 restrictions
       if (zoneId === 'N5' || zoneId === 'N6') {
         if (staff.gender === 'female' || staff.hangingRestriction === true) {
           Toast.show({
@@ -124,8 +136,6 @@ const Dashboard = () => {
 
       selectedStaffList.forEach(staff => {
         const staffId = staff.id;
-
-        // 1. Remove from old location
         if (Array.isArray(newAssigns['absent'])) {
           newAssigns['absent'] = newAssigns['absent'].filter(s => s.id !== staffId);
         }
@@ -135,7 +145,6 @@ const Dashboard = () => {
           }
         });
 
-        // 2. Add to New Location
         if (zoneId === 'absent') {
           const curr = newAssigns['absent'] || [];
           if (!curr.find(s => s.id === staffId)) {
@@ -180,7 +189,6 @@ const Dashboard = () => {
     setSelectedStaffList([]);
   };
 
-
   const handleAutoAssign = async () => {
     setIsAutoAssigning(true);
     try {
@@ -204,7 +212,6 @@ const Dashboard = () => {
 
         setAssignments(newAssignments);
 
-        // ✅ Toast instead of Alert
         let text2 = `Assigned: ${autoData.summary.assigned}/6`;
         if (autoData.summary.overtime > 0) {
           text2 += ` | OT: ${autoData.summary.overtime}`;
@@ -225,7 +232,6 @@ const Dashboard = () => {
         });
       }
     } catch (error) {
-      // ✅ Toast for error too
       Toast.show({
         type: 'error',
         text1: 'Auto-Assign Failed',
@@ -266,13 +272,10 @@ const Dashboard = () => {
   const assignedIds = Object.values(assignments).flat().map(s => s?.id).filter(Boolean);
   const availablePool = members.filter(s => s.available === 'present');
   const absentStaff = assignments['absent'] || [];
-
-  // ✅ Filter absent staff by current shift only
   const currentShiftAbsent = absentStaff.filter(staff =>
     staff.shift && staff.shift.toLowerCase() === shift.toLowerCase()
   );
 
-  // ✅ UPDATED: Added showBadges parameter
   const renderStaffCircle = (staff, size = 50, showBadges = false) => {
     const isSelected = selectedStaffList.some(s => s.id === staff.id);
     const isAssigned = assignedIds.includes(staff.id);
@@ -303,33 +306,22 @@ const Dashboard = () => {
               </Text>
             </View>
           )}
-
           {isSelected && (
             <View style={styles.checkBadge}>
               <Check size={10} color="white" strokeWidth={4} />
             </View>
           )}
-
           {!isSelected && isAssigned && staff.available === 'present' && (
             <View style={styles.assignedBadge} />
           )}
         </TouchableOpacity>
-
-        {/* ✅ NEW: Show badges only in assigned zones */}
         {showBadges && (
           <>
-            {/* OT Badge */}
             {staff.isOvertime && (
-              <View style={styles.otBadge}>
-                <Text style={styles.otText}>OT</Text>
-              </View>
+              <View style={styles.otBadge}><Text style={styles.otText}>OT</Text></View>
             )}
-
-            {/* Promoted Supervisor Badge */}
             {staff.promotedToSupervisor && (
-              <View style={styles.promotedBadge}>
-                <Text style={styles.promotedText}>⭐</Text>
-              </View>
+              <View style={styles.promotedBadge}><Text style={styles.promotedText}>⭐</Text></View>
             )}
           </>
         )}
@@ -337,7 +329,6 @@ const Dashboard = () => {
     );
   };
 
-  // ✅ UPDATED: Pass showBadges=true for zones
   const renderZone = (id, label, icon) => (
     <TouchableOpacity
       style={[styles.zone, assignments[id] && styles.filledZone]}
@@ -345,7 +336,7 @@ const Dashboard = () => {
     >
       <Text style={styles.zoneLabel}>{label}</Text>
       {assignments[id] ? (
-        renderStaffCircle(assignments[id], 55, true) // ✅ Show badges in zones
+        renderStaffCircle(assignments[id], 55, true) 
       ) : (
         <View style={styles.emptyIcon}>{icon}</View>
       )}
@@ -356,7 +347,7 @@ const Dashboard = () => {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>PUMP MANAGER</Text>
+          <Text style={styles.title}>PUMP MANAGEMENT</Text>
           <Text style={styles.subtitle}>{date} • {shift}</Text>
         </View>
         <TouchableOpacity
@@ -374,8 +365,12 @@ const Dashboard = () => {
           <View style={{ position: 'absolute', top: 20, left: 60, zIndex: 1 }}>
             {renderZone('Supervisor', 'Supervisor', <ShieldCheck color="#aaa" />)}
           </View>
+          {/* 👇 4. Date Picker Trigger */}
           <View style={{ position: 'absolute', top: 30, right: 25, zIndex: 1 }}>
-            <View style={styles.dateBox}><Text style={styles.dateText}>{date}</Text></View>
+            <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.dateBox}>
+              <Calendar size={14} color="#1e40af" style={{marginRight: 4}}/>
+              <Text style={styles.dateText}>{date}</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.mapLayout}>
@@ -415,7 +410,6 @@ const Dashboard = () => {
           </View>
           <TextInput placeholder="Add note..." value={caption} onChangeText={setCaption} style={styles.captionInput} />
 
-          {/* ✅ Absent Section - Shows ONLY current shift absent staff in Screenshot */}
           {currentShiftAbsent.length > 0 && (
             <View style={styles.absentBoxInMap}>
               <Text style={styles.absentTitleInMap}>Absent ({currentShiftAbsent.length})</Text>
@@ -457,8 +451,6 @@ const Dashboard = () => {
               <View key={staff.id} style={styles.staffItem}>
                 {renderStaffCircle(staff, 60, false)}
                 <Text style={styles.staffName} numberOfLines={1}>{staff.name}</Text>
-
-                {/* ✅ UPDATED WARNING LOGIC - All 3 restriction types */}
                 {staff.nozzleRestriction === true ? (
                   <Text style={styles.warningText}>⚠️ N1-N6 Block</Text>
                 ) : (staff.hangingRestriction === true || staff.gender === 'female') ? (
@@ -468,7 +460,7 @@ const Dashboard = () => {
             ))}
           </ScrollView>
         </View>
-        {/* MARK ABSENT BUTTON */}
+        
         <TouchableOpacity
           style={[styles.actionZone, styles.absentZone, selectedStaffList.length > 0 && selectedStaffList.every(s => s.available === 'present') && styles.activeAction]}
           onPress={() => handleZoneTap('absent')}
@@ -501,7 +493,6 @@ const Dashboard = () => {
               </ScrollView>
             </View>
 
-            {/* MARK PRESENT BUTTON */}
             <TouchableOpacity
               style={[styles.actionZone, styles.presentZone, selectedStaffList.length > 0 && selectedStaffList.every(s => s.available === 'absent') && styles.activePresent]}
               onPress={() => handleZoneTap('pool')}
@@ -516,7 +507,6 @@ const Dashboard = () => {
 
       </ScrollView>
 
-      {/* Footer & Modal */}
       <View style={styles.navBar}>
         <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('History')}>
           <Calendar color="#64748b" size={26} /><Text style={styles.navText}>History</Text>
@@ -548,27 +538,29 @@ const Dashboard = () => {
               </View>
               <ChevronRight color="#cbd5e1" />
             </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.settingOption}
-              onPress={() => {
-                setShowSettingsModal(false);
-                Toast.show({
-                  type: 'info',
-                  text1: 'Coming Soon',
-                  text2: 'SMS features coming soon!',
-                  visibilityTime: 2000,
-                  position: 'top'
-                });
-              }}
-            >
+            <TouchableOpacity style={styles.settingOption} onPress={() => { setShowSettingsModal(false); Toast.show({ type: 'info', text1: 'Coming Soon', text2: 'SMS features coming soon!', visibilityTime: 2000, position: 'top' }); }}>
               <View style={[styles.iconBox, { backgroundColor: '#f3e8ff' }]}><MessageSquare color="#9333ea" size={20} /></View>
               <View style={{ flex: 1 }}><Text style={styles.optionTitle}>SMS Configuration</Text><Text style={styles.optionSub}>Set morning/evening auto-send time</Text></View><ChevronRight color="#cbd5e1" />
             </TouchableOpacity>
-
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* 👇 5. Render Date Picker */}
+      {showDatePicker && (
+        <DateTimePicker
+          value={new Date(date)}
+          mode="date"
+          display="default"
+          onChange={(event, selectedDate) => {
+            setShowDatePicker(false);
+            if (selectedDate) {
+              setDate(selectedDate.toISOString().split('T')[0]);
+            }
+          }}
+        />
+      )}
+
       <Toast />
     </SafeAreaView>
   );
@@ -599,8 +591,11 @@ const styles = StyleSheet.create({
   hangingText: { fontSize: 12, fontWeight: 'bold', color: '#334155' },
   mpdBox: { width: 100, height: 50, backgroundColor: '#1e293b', borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
   mpdText: { color: 'white', fontWeight: '900' },
-  dateBox: { backgroundColor: '#eff6ff', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 15, borderWidth: 2, borderColor: '#3b82f6' },
+  
+  // ✅ Updated Date Box to be clickable
+  dateBox: { backgroundColor: '#eff6ff', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 15, borderWidth: 2, borderColor: '#3b82f6', flexDirection: 'row', alignItems: 'center' },
   dateText: { fontSize: 10, fontWeight: 'bold', color: '#1e40af' },
+  
   zone: { width: 60, height: 60, borderRadius: 30, borderWidth: 2, borderColor: '#cbd5e1', borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc' },
   filledZone: { borderStyle: 'solid', borderColor: '#3b82f6', backgroundColor: '#eff6ff' },
   zoneLabel: { position: 'absolute', top: -8, backgroundColor: '#334155', color: 'white', fontSize: 8, paddingHorizontal: 6, borderRadius: 8, overflow: 'hidden' },
@@ -612,71 +607,14 @@ const styles = StyleSheet.create({
   assignedBadge: { position: 'absolute', top: 0, right: 0, backgroundColor: '#3b82f6', width: 12, height: 12, borderRadius: 6, borderWidth: 1, borderColor: 'white' },
   letterAvatar: { backgroundColor: '#cbd5e1', justifyContent: 'center', alignItems: 'center' },
   letterText: { fontWeight: '900', color: '#475569' },
-
-  // ✅ NEW: OT Badge
-  otBadge: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    backgroundColor: '#f97316',
-    borderRadius: 10,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderWidth: 1,
-    borderColor: 'white',
-  },
-  otText: {
-    fontSize: 8,
-    fontWeight: 'bold',
-    color: 'white',
-  },
-
-  // ✅ NEW: Promoted Supervisor Badge
-  promotedBadge: {
-    position: 'absolute',
-    top: -8,
-    left: -8,
-    backgroundColor: '#fbbf24',
-    borderRadius: 12,
-    padding: 3,
-    borderWidth: 1,
-    borderColor: 'white',
-  },
-  promotedText: {
-    fontSize: 12,
-  },
-
-  // ✅ NEW: Warning text for females/restricted
-  warningText: {
-    fontSize: 8,
-    color: '#ef4444',
-    fontWeight: 'bold',
-    marginTop: 2,
-  },
-
-  // ✅ Absent Box in ViewShot (for screenshot)
-  absentBoxInMap: {
-    width: '100%',
-    marginTop: 15,
-    padding: 12,
-    backgroundColor: '#fef2f2',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#fca5a5',
-  },
-  absentTitleInMap: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    color: '#b91c1c',
-    marginBottom: 5,
-  },
-  absentNameText: {
-    fontSize: 10,
-    color: '#b91c1c',
-    fontWeight: '500',
-  },
-
-  // SHARED POOL STYLES
+  otBadge: { position: 'absolute', top: -6, right: -6, backgroundColor: '#f97316', borderRadius: 10, paddingHorizontal: 5, paddingVertical: 2, borderWidth: 1, borderColor: 'white' },
+  otText: { fontSize: 8, fontWeight: 'bold', color: 'white' },
+  promotedBadge: { position: 'absolute', top: -8, left: -8, backgroundColor: '#fbbf24', borderRadius: 12, padding: 3, borderWidth: 1, borderColor: 'white' },
+  promotedText: { fontSize: 12 },
+  warningText: { fontSize: 8, color: '#ef4444', fontWeight: 'bold', marginTop: 2 },
+  absentBoxInMap: { width: '100%', marginTop: 15, padding: 12, backgroundColor: '#fef2f2', borderRadius: 12, borderWidth: 1, borderColor: '#fca5a5' },
+  absentTitleInMap: { fontSize: 11, fontWeight: 'bold', color: '#b91c1c', marginBottom: 5 },
+  absentNameText: { fontSize: 10, color: '#b91c1c', fontWeight: '500' },
   staffPool: { padding: 20 },
   poolHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   poolTitle: { fontSize: 12, fontWeight: 'bold', color: '#64748b' },
@@ -684,19 +622,12 @@ const styles = StyleSheet.create({
   scrollRow: { flexDirection: 'row' },
   staffItem: { marginRight: 15, alignItems: 'center', width: 70 },
   staffName: { fontSize: 10, textAlign: 'center', marginTop: 4, color: '#334155', width: '100%' },
-
-  // ACTION ZONES (Buttons)
   actionZone: { margin: 20, marginTop: 5, padding: 15, borderWidth: 2, borderStyle: 'dashed', borderRadius: 15, flexDirection: 'row', justifyContent: 'center', gap: 10, alignItems: 'center' },
   actionText: { fontWeight: 'bold' },
-
-  // Absent Button Style
   absentZone: { borderColor: '#cbd5e1', backgroundColor: '#f8fafc' },
   activeAction: { backgroundColor: '#fee2e2', borderColor: '#ef4444', borderStyle: 'solid' },
-
-  // Present Button Style
   presentZone: { borderColor: '#cbd5e1', backgroundColor: 'white' },
   activePresent: { backgroundColor: '#d1fae5', borderColor: '#10b981', borderStyle: 'solid' },
-
   captionInput: { width: '100%', backgroundColor: '#f8fafc', padding: 8, borderRadius: 10, marginTop: 0, fontSize: 12, textAlign: 'center' },
   navBar: { flexDirection: 'row', backgroundColor: 'white', borderTopWidth: 1, borderColor: '#e2e8f0', paddingVertical: 10, paddingBottom: 20, elevation: 10, position: 'absolute', bottom: 0, width: '100%' },
   navItem: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
