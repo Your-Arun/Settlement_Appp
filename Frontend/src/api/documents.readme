@@ -5,3 +5,17 @@ Agar Female hai, to wo N5 aur N6 par nahi lagegi.
 Assignment Order: Pehle Supervisor -> Phir Air Boy -> Phir Nozzles -> End mein Extra.
 OT Logic: Maximum 2 OT allowed hain, aur ek hi machine (jaise N1-N2) par dono OT nahi ho sakte.
 Extra: Extra position ke liye Restricted logo ko pehle priority di ja rahi hai (kyunki wo nozzle pe nahi lag sakte).
+
+
+
+
+
+A.Restrictions:
+1.Agar nozzleRestriction === true hai, to wo N1 se N6 kisi par bhi nahi lagega.
+2.Agar Female hai, to wo N5 aur N6 par nahi lagegi.
+3.add new  ek restriced jo bss h5,h6 pr nhi assign ho 
+B.OT Logic: Maximum 3 OT allowed hain, aur ek hi machine (jaise N1-N2) par dono OT nahi ho sakte.
+C.abhi jese extra hone ke baad bhi ot li jari hai vo nhi lena agr extra hai to phle usko assign krenge  agr extra nhi hai fir bhi kam pad rhe hai memeber to ot lena hai .
+D. jese ek or point hai member kam hone pr baar baar h5, h6 pr hi assign hore hai ot wale ..ye jruri nhi n1-n4 tk bhi assign kr skte hai
+E. ab air boy wale me agr same shift ka airboy presnt hai to vo assign ho jayega vrna opposite wala duty kr lega mtlb vice versa use kr skte hai airboy me or agar  dono absnet hai to operator assign ho jayega.
+F.

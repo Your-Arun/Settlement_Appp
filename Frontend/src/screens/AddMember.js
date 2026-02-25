@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { 
-  View, Text, TextInput, TouchableOpacity, Image, StyleSheet, 
-  ScrollView, ActivityIndicator, Alert, Linking, Switch 
+import {
+  View, Text, TextInput, TouchableOpacity, Image, StyleSheet,
+  ScrollView, ActivityIndicator, Alert, Linking, Switch
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import axiosInstance from '../api/axiosInstance';
@@ -10,17 +10,18 @@ import Toast from 'react-native-toast-message';
 import { ShieldAlert } from 'lucide-react-native';
 
 const AddMember = ({ navigation, route }) => {
-  const memberToEdit = route.params?.memberToEdit; 
+  const memberToEdit = route.params?.memberToEdit;
   const [loading, setLoading] = useState(false);
 
   // ✅ Form Data (with nozzleRestriction)
   const [formData, setFormData] = useState({
-    name: memberToEdit?.name || '', 
-    role: memberToEdit?.role || 'operator', 
-    shift: memberToEdit?.shift || 'morning', 
+    name: memberToEdit?.name || '',
+    role: memberToEdit?.role || 'operator',
+    shift: memberToEdit?.shift || 'morning',
     phoneNumber: memberToEdit?.phoneNumber || '',
     gender: memberToEdit?.gender || 'male',
-    nozzleRestriction: memberToEdit?.nozzleRestriction || false, // ✅ NEW
+    nozzleRestriction: memberToEdit?.nozzleRestriction || false,
+    hangingRestriction: memberToEdit?.hangingRestriction || false,
   });
 
   // ✅ Error State for Validation
@@ -137,6 +138,7 @@ const AddMember = ({ navigation, route }) => {
     data.append('available', 'present');
     data.append('gender', formData.gender);
     data.append('nozzleRestriction', formData.nozzleRestriction); // ✅ NEW
+    data.append('hangingRestriction', formData.hangingRestriction);  // ⭐ NEW
 
     if (image) {
       let filename = image.uri.split('/').pop();
@@ -150,9 +152,9 @@ const AddMember = ({ navigation, route }) => {
         await axiosInstance.put(`/members/${memberToEdit._id}`, data, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
-        Toast.show({ 
-          type: 'success', 
-          text1: 'Updated', 
+        Toast.show({
+          type: 'success',
+          text1: 'Updated',
           text2: 'Staff updated successfully',
           position: 'top'
         });
@@ -160,9 +162,9 @@ const AddMember = ({ navigation, route }) => {
         await axiosInstance.post('/shifting', data, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
-        Toast.show({ 
-          type: 'success', 
-          text1: 'Created', 
+        Toast.show({
+          type: 'success',
+          text1: 'Created',
           text2: 'New staff added successfully',
           position: 'top'
         });
@@ -170,9 +172,9 @@ const AddMember = ({ navigation, route }) => {
       navigation.goBack();
     } catch (error) {
       console.error(error);
-      Toast.show({ 
-        type: 'error', 
-        text1: 'Server Error', 
+      Toast.show({
+        type: 'error',
+        text1: 'Server Error',
         text2: 'Something went wrong.',
         position: 'top'
       });
@@ -224,7 +226,7 @@ const AddMember = ({ navigation, route }) => {
             value={formData.name}
             onChangeText={t => {
               setFormData({ ...formData, name: t });
-              if (errors.name) setErrors({...errors, name: null}); // Clear error on type
+              if (errors.name) setErrors({ ...errors, name: null }); // Clear error on type
             }}
           />
           {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
@@ -241,7 +243,7 @@ const AddMember = ({ navigation, route }) => {
             value={formData.phoneNumber}
             onChangeText={t => {
               setFormData({ ...formData, phoneNumber: t });
-              if (errors.phoneNumber) setErrors({...errors, phoneNumber: null});
+              if (errors.phoneNumber) setErrors({ ...errors, phoneNumber: null });
             }}
           />
           {errors.phoneNumber && <Text style={styles.errorText}>{errors.phoneNumber}</Text>}
@@ -251,8 +253,8 @@ const AddMember = ({ navigation, route }) => {
         <Text style={styles.label}>Role</Text>
         <View style={styles.row}>
           {['operator', 'supervisor', 'air boy'].map((r) => (
-            <TouchableOpacity 
-              key={r} onPress={() => setFormData({ ...formData, role: r })} 
+            <TouchableOpacity
+              key={r} onPress={() => setFormData({ ...formData, role: r })}
               style={[styles.chip, formData.role === r && styles.activeChip]}
             >
               <Text style={formData.role === r ? styles.activeText : styles.text}>
@@ -265,8 +267,8 @@ const AddMember = ({ navigation, route }) => {
         <Text style={styles.label}>Gender</Text>
         <View style={styles.row}>
           {['male', 'female'].map((g) => (
-            <TouchableOpacity 
-              key={g} onPress={() => setFormData({ ...formData, gender: g })} 
+            <TouchableOpacity
+              key={g} onPress={() => setFormData({ ...formData, gender: g })}
               style={[styles.chip, formData.gender === g && styles.activeChip]}
             >
               <Text style={formData.gender === g ? styles.activeText : styles.text}>
@@ -279,8 +281,8 @@ const AddMember = ({ navigation, route }) => {
         <Text style={styles.label}>Shift</Text>
         <View style={styles.row}>
           {['morning', 'evening'].map((s) => (
-            <TouchableOpacity 
-              key={s} onPress={() => setFormData({ ...formData, shift: s })} 
+            <TouchableOpacity
+              key={s} onPress={() => setFormData({ ...formData, shift: s })}
               style={[styles.chip, formData.shift === s && styles.activeChip]}
             >
               <Text style={formData.shift === s ? styles.activeText : styles.text}>
@@ -305,8 +307,8 @@ const AddMember = ({ navigation, route }) => {
             />
           </View>
           <Text style={styles.restrictionDesc}>
-            {formData.nozzleRestriction 
-              ? '🔒 COMPLETELY RESTRICTED: Cannot work on ANY nozzle (N1-N6). Can only be Extra/Air/Supervisor.' 
+            {formData.nozzleRestriction
+              ? '🔒 COMPLETELY RESTRICTED: Cannot work on ANY nozzle (N1-N6). Can only be Extra/Air/Supervisor.'
               : '✅ This member can work on all nozzles'
             }
           </Text>
@@ -317,13 +319,35 @@ const AddMember = ({ navigation, route }) => {
               </Text>
             </View>
           )}
-           {formData.gender === 'female' && formData.nozzleRestriction && (
+          {formData.gender === 'female' && formData.nozzleRestriction && (
             <View style={styles.warningBox}>
               <Text style={styles.warningText}>
                 ⚠️ Female + Restricted = Blocked from ALL nozzles
               </Text>
             </View>
           )}
+        </View>
+
+        {/* ⭐ NEW: Hanging Restriction Toggle */}
+        <View style={styles.restrictionCard}>
+          <View style={styles.restrictionHeader}>
+            <View style={styles.restrictionTitleRow}>
+              <ShieldAlert size={20} color={formData.hangingRestriction ? "#f59e0b" : "#94a3b8"} />
+              <Text style={styles.restrictionTitle}>H5/H6 Restriction</Text>
+            </View>
+            <Switch
+              value={formData.hangingRestriction}
+              onValueChange={(value) => setFormData({ ...formData, hangingRestriction: value })}
+              trackColor={{ false: '#cbd5e1', true: '#fef3c7' }}
+              thumbColor={formData.hangingRestriction ? '#f59e0b' : '#f1f5f9'}
+            />
+          </View>
+          <Text style={styles.restrictionDesc}>
+            {formData.hangingRestriction
+              ? '🔒 This member is BLOCKED from H5/H6 only'
+              : '✅ This member can work on H5/H6'
+            }
+          </Text>
         </View>
 
         {/* Submit Button */}
@@ -350,12 +374,12 @@ const styles = StyleSheet.create({
   header: { padding: 20, flexDirection: 'row', alignItems: 'center', marginTop: 30 },
   backBtn: { padding: 8, borderRadius: 8, backgroundColor: '#f1f5f9', marginRight: 15 },
   title: { fontSize: 22, fontWeight: '800', color: '#1e293b' },
-  
+
   form: { padding: 24, paddingBottom: 50 },
-  
+
   imageWrapper: { alignSelf: 'center', marginBottom: 25 },
   imageContainer: {
-    width: 110, height: 110, borderRadius: 55, overflow: 'hidden', 
+    width: 110, height: 110, borderRadius: 55, overflow: 'hidden',
     backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#cbd5e1',
     justifyContent: 'center', alignItems: 'center'
   },
@@ -370,17 +394,17 @@ const styles = StyleSheet.create({
   inputGroup: { marginBottom: 15 },
   label: { fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 6 },
   req: { color: '#ef4444' },
-  input: { 
-    backgroundColor: '#f8fafc', padding: 14, borderRadius: 10, fontSize: 15, 
-    borderWidth: 1, borderColor: '#e2e8f0', color: '#1e293b' 
+  input: {
+    backgroundColor: '#f8fafc', padding: 14, borderRadius: 10, fontSize: 15,
+    borderWidth: 1, borderColor: '#e2e8f0', color: '#1e293b'
   },
   inputError: { borderColor: '#ef4444', backgroundColor: '#fef2f2' },
   errorText: { color: '#ef4444', fontSize: 11, marginTop: 4, marginLeft: 2 },
 
   row: { flexDirection: 'row', gap: 8, marginBottom: 20, flexWrap: 'wrap' },
-  chip: { 
-    paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, 
-    backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#f1f5f9' 
+  chip: {
+    paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20,
+    backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#f1f5f9'
   },
   activeChip: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
   text: { color: '#64748b', fontSize: 13, fontWeight: '500' },
@@ -430,10 +454,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  submitBtn: { 
-    backgroundColor: '#2563eb', paddingVertical: 16, borderRadius: 12, 
-    alignItems: 'center', marginTop: 10, shadowColor: '#2563eb', 
-    shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.2, shadowRadius: 8, elevation: 4
+  submitBtn: {
+    backgroundColor: '#2563eb', paddingVertical: 16, borderRadius: 12,
+    alignItems: 'center', marginTop: 10, shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 4
   },
   disabledBtn: { opacity: 0.7, backgroundColor: '#93c5fd' },
   submitText: { color: 'white', fontWeight: 'bold', fontSize: 16, letterSpacing: 0.5 },

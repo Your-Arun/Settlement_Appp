@@ -17,18 +17,18 @@ exports.listMembers = async (req, res) => {
 
 exports.addMember = async (req, res) => {
   try {
-    // Mobile sends file via Multer
-    const avatarUrl = req.file ? req.file.path : null;
-
     const newMember = new Member({
       name: req.body.name,
-      role: req.body.role || 'operator',
-      shift: req.body.shift || 'morning',
+      role: req.body.role,
+      shift: req.body.shift,
       phoneNumber: req.body.phoneNumber,
       available: 'present',
       gender: req.body.gender || 'male',
-      nozzleRestriction: req.body.nozzleRestriction === 'true' || req.body.nozzleRestriction === true,
-      avatar: avatarUrl
+      nozzleRestriction: req.body.nozzleRestriction === 'true' || 
+                         req.body.nozzleRestriction === true,
+      hangingRestriction: req.body.hangingRestriction === 'true' ||  // ✅ NEW
+                          req.body.hangingRestriction === true,
+      avatar: req.file ? req.file.path : null
     });
 
     const saved = await newMember.save();
@@ -51,29 +51,34 @@ exports.updateStatus = async (req, res) => {
 };
 
 // NEW: Update Member (Full Edit)
+
 exports.updateMember = async (req, res) => {
   try {
-    const { id } = req.params;
-    const updates = {};
-    
-    if (req.body.name) updates.name = req.body.name;
-    if (req.body.role) updates.role = req.body.role;
-    if (req.body.shift) updates.shift = req.body.shift;
-    if (req.body.gender) updates.gender = req.body.gender;
-    if (req.body.phoneNumber) updates.phoneNumber = req.body.phoneNumber;
-    if (req.body.nozzleRestriction !== undefined) {
-      updates.nozzleRestriction = req.body.nozzleRestriction === 'true' || req.body.nozzleRestriction === true;
-    }
-    
-    // Handle avatar upload if new file
+    const updates = {
+      name: req.body.name,
+      role: req.body.role,
+      shift: req.body.shift,
+      phoneNumber: req.body.phoneNumber,
+      gender: req.body.gender,
+      nozzleRestriction: req.body.nozzleRestriction === 'true' || 
+                         req.body.nozzleRestriction === true,
+      hangingRestriction: req.body.hangingRestriction === 'true' ||  // ✅ NEW
+                          req.body.hangingRestriction === true,
+    };
+
     if (req.file) {
       updates.avatar = req.file.path;
     }
 
-    const updated = await Member.findByIdAndUpdate(id, updates, { new: true });
-    res.json({ success: true, member: updated });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    const updated = await Member.findByIdAndUpdate(
+      req.params.id,
+      updates,
+      { new: true, runValidators: true }
+    );
+
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 };
 
@@ -88,24 +93,32 @@ exports.deleteMember = async (req, res) => {
   }
 };
 
-// Check conditions (Complete Restriction + Female H5/H6)
+// ========================================
+// COMPLETE FINAL BACKEND - All Requirements
+// ========================================
+
 const canAssignToNozzle = (member, nozzleKey) => {
-  // ✅ RULE 1: Complete nozzle restriction
+  // RULE 1: Complete nozzle restriction (N1-N6 blocked)
   if (member.nozzleRestriction === true) {
-    return false; // Blocked from ALL nozzles (N1-N6)
+    return false;
   }
   
-  // ✅ RULE 2: Female H5/H6 restriction (only if not completely restricted)
+  // RULE 2 & 3: H5/H6 restrictions (Female OR hangingRestriction)
   if (nozzleKey === 'N5' || nozzleKey === 'N6') {
+    // Female blocked from H5/H6
     if (member.gender && member.gender.toLowerCase() === 'female') {
-      return false; // Females blocked from H5/H6
+      return false;
+    }
+    // Hanging restriction blocked from H5/H6
+    if (member.hangingRestriction === true) {
+      return false;
     }
   }
   
   return true; // Allowed
 };
 
-// Shuffle array for fair rotation
+// Shuffle for fair rotation
 const shuffle = (array) => {
   const arr = [...array];
   for (let i = arr.length - 1; i > 0; i--) {
@@ -144,10 +157,11 @@ exports.autoAssign = async (req, res) => {
     const primaryAirBoys = getRoleGroup(primaryStaff, 'air boy');
     const primaryOperators = getRoleGroup(primaryStaff, 'operator');
     
+    const backupAirBoys = getRoleGroup(backupStaff, 'air boy');
     const backupOperators = getRoleGroup(backupStaff, 'operator');
 
-    // ✅ FILTER: Separate restricted and unrestricted operators
-    const unrestrictedOperators = primaryOperators.filter(op => 
+    // Filter Eligible vs Restricted
+    const eligibleOperators = primaryOperators.filter(op => 
       op.nozzleRestriction !== true
     );
     const restrictedOperators = primaryOperators.filter(op => 
@@ -166,50 +180,137 @@ exports.autoAssign = async (req, res) => {
     const overtimeNozzles = new Set();
     
     let totalOTCount = 0;
-    const MAX_TOTAL_OT = 2;
+    const MAX_TOTAL_OT = 3; 
 
     // 4. ASSIGN SUPERVISOR
     if (primarySupervisors.length > 0) {
-      assignments.Supervisor = primarySupervisors[0];
-      assignedIds.add(primarySupervisors[0]._id.toString());
+      const sup = primarySupervisors[0];
+      assignments.Supervisor = sup.toObject();
+      assignedIds.add(sup._id.toString());
     } else {
-      // Promote operator (prefer unrestricted first)
-      const backupSupervisor = unrestrictedOperators.find(op => 
+      // Promote operator
+      const promotedSupervisor = eligibleOperators.find(op => 
         !assignedIds.has(op._id.toString())
       ) || restrictedOperators.find(op => 
         !assignedIds.has(op._id.toString())
       );
       
-      if (backupSupervisor) {
-        const supervisorObj = backupSupervisor.toObject();
+      if (promotedSupervisor) {
+        const supervisorObj = promotedSupervisor.toObject();
         supervisorObj.promotedToSupervisor = true;
         assignments.Supervisor = supervisorObj;
         assignedIds.add(supervisorObj._id.toString());
       }
     }
 
-    // 5. ASSIGN AIR BOY
-    if (primaryAirBoys.length > 0) {
-      assignments.Air = primaryAirBoys[0];
-      assignedIds.add(primaryAirBoys[0]._id.toString());
+    // 5. ASSIGN AIR BOY (Primary -> Backup -> Promote)
+    let airBoyAssigned = false;
+
+    // Try Primary
+    const primaryAir = primaryAirBoys.find(ab => !assignedIds.has(ab._id.toString()));
+    if (primaryAir) {
+      assignments.Air = primaryAir.toObject();
+      assignedIds.add(primaryAir._id.toString());
+      airBoyAssigned = true;
     }
 
-    // 6. HELPER FUNCTION: Assign to nozzle
+    // Try Backup (OT)
+    if (!airBoyAssigned) {
+      const backupAir = backupAirBoys.find(ab => !assignedIds.has(ab._id.toString()));
+      if (backupAir) {
+        const airObj = backupAir.toObject();
+        airObj.name = `${airObj.name} (OT)`;
+        airObj.isOvertime = true;
+        assignments.Air = airObj;
+        assignedIds.add(backupAir._id.toString());
+        totalOTCount++;
+        airBoyAssigned = true;
+      }
+    }
+
+    // Promote Operator (Priority to restricted)
+    if (!airBoyAssigned) {
+      const promotedAir = restrictedOperators.find(op => !assignedIds.has(op._id.toString())) 
+                       || eligibleOperators.find(op => !assignedIds.has(op._id.toString()));
+      
+      if (promotedAir) {
+        const airObj = promotedAir.toObject();
+        airObj.promotedToAir = true;
+        assignments.Air = airObj;
+        assignedIds.add(promotedAir._id.toString());
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // 6. ✅ PRIORITY STEP: COMPULSORY HANGING (N5 or N6)
+    // ------------------------------------------------------------------
+    // We pick N5 or N6 randomly to fill first
+    const hangingPriority = Math.random() < 0.5 ? ['N5', 'N6'] : ['N6', 'N5'];
+    
+    // Helper function to check if operator is valid for Hanging (Male + No Hanging Restriction)
+    const isHangingEligible = (op) => 
+      op.gender?.toLowerCase() !== 'female' && op.hangingRestriction !== true;
+
+    // Try to find a Primary operator for hanging FIRST
+    let hangingFilled = false;
+    
+    for (const hNozzle of hangingPriority) {
+      const candidate = eligibleOperators.find(op => 
+        !assignedIds.has(op._id.toString()) && 
+        canAssignToNozzle(op, hNozzle) // This includes gender/hanging restriction checks
+      );
+
+      if (candidate) {
+        assignments[hNozzle] = candidate.toObject();
+        assignedIds.add(candidate._id.toString());
+        hangingFilled = true;
+        break; // Found one, stop looking for compulsory hanging
+      }
+    }
+
+    // IF NOT FILLED BY PRIMARY, FORCE OT FOR HANGING
+    if (!hangingFilled && totalOTCount < MAX_TOTAL_OT) {
+       for (const hNozzle of hangingPriority) {
+          const backupCandidate = backupOperators.find(op => 
+             !assignedIds.has(op._id.toString()) && 
+             op.nozzleRestriction !== true && // Not completely restricted
+             isHangingEligible(op) // Must be male/no hanging restriction
+          );
+
+          if (backupCandidate) {
+            const staffObj = backupCandidate.toObject();
+            staffObj.name = `${staffObj.name} (OT)`;
+            staffObj.isOvertime = true;
+            
+            assignments[hNozzle] = staffObj;
+            assignedIds.add(staffObj._id.toString());
+            overtimeNozzles.add(hNozzle);
+            totalOTCount++;
+            hangingFilled = true;
+            break;
+          }
+       }
+    }
+
+    // ------------------------------------------------------------------
+
+    // 7. HELPER: General Assign
     const assignToNozzle = (nozzleKey, operators, isOT = false) => {
+      // If nozzle is already filled (by Compulsory step), skip
+      if (assignments[nozzleKey]) return false;
+
       const candidate = operators.find(op => 
         !assignedIds.has(op._id.toString()) && canAssignToNozzle(op, nozzleKey)
       );
 
       if (candidate) {
         let staffObj = candidate.toObject();
-        
         if (isOT) {
           staffObj.name = `${staffObj.name} (OT)`;
           staffObj.isOvertime = true;
           overtimeNozzles.add(nozzleKey);
           totalOTCount++;
         }
-        
         assignments[nozzleKey] = staffObj;
         assignedIds.add(staffObj._id.toString());
         return true;
@@ -217,17 +318,29 @@ exports.autoAssign = async (req, res) => {
       return false;
     };
 
-    // 7. ASSIGN NOZZLES (Using ONLY unrestricted operators)
-    const nozzlePriority = ['N1', 'N2', 'N3', 'N4', 'N5', 'N6'];
+    // 8. ASSIGN REMAINING NOZZLES (N1-N6) - Primary
+    // (Note: H5 or N6 might already be filled, loop will skip them)
+    const nozzlePriority = ['N1', 'N2', 'N3', 'N4', 'N5', 'N6']; 
 
-    // PASS 1: Assign from unrestricted operators only
     for (const nozzle of nozzlePriority) {
-      assignToNozzle(nozzle, unrestrictedOperators, false);
+      assignToNozzle(nozzle, eligibleOperators, false);
     }
 
-    // PASS 2: Fill remaining with OVERTIME (also unrestricted only)
-    if (totalOTCount < MAX_TOTAL_OT) {
-      const unrestrictedOT = backupOperators.filter(op => 
+    // 9. ASSIGN EXTRA (Before OT)
+    const extraCandidate = restrictedOperators.find(op => 
+      !assignedIds.has(op._id.toString())
+    ) || eligibleOperators.find(op => 
+      !assignedIds.has(op._id.toString())
+    );
+    
+    if (extraCandidate) {
+      assignments.Extra = extraCandidate.toObject();
+      assignedIds.add(extraCandidate._id.toString());
+    }
+
+    // 10. USE OT FOR REMAINING NOZZLES
+    if (assignments.Extra && totalOTCount < MAX_TOTAL_OT) {
+      const eligibleOT = backupOperators.filter(op => 
         op.nozzleRestriction !== true
       );
       
@@ -235,6 +348,7 @@ exports.autoAssign = async (req, res) => {
         if (assignments[nozzle]) continue;
         if (totalOTCount >= MAX_TOTAL_OT) break;
 
+        // Check OT pair blocking
         let canUseOT = true;
         if (nozzle === 'N1' && overtimeNozzles.has('N2')) canUseOT = false;
         if (nozzle === 'N2' && overtimeNozzles.has('N1')) canUseOT = false;
@@ -244,42 +358,28 @@ exports.autoAssign = async (req, res) => {
         if (nozzle === 'N6' && overtimeNozzles.has('N5')) canUseOT = false;
 
         if (canUseOT) {
-          assignToNozzle(nozzle, unrestrictedOT, true);
+          assignToNozzle(nozzle, eligibleOT, true);
         }
       }
     }
 
-    // 8. ASSIGN EXTRA OPERATOR
-    // ✅ PRIORITY: Restricted operators first, then unrestricted
-    const extraCandidate = restrictedOperators.find(op => 
-      !assignedIds.has(op._id.toString())
-    ) || unrestrictedOperators.find(op => 
-      !assignedIds.has(op._id.toString())
-    );
-    
-    if (extraCandidate) {
-      assignments.Extra = extraCandidate.toObject();
-      assignedIds.add(extraCandidate._id.toString());
-    }
-
-    // 9. CALCULATE SUMMARY
-    const assignedCount = ['N1', 'N2', 'N3', 'N4', 'N5', 'N6'].reduce((acc, key) => 
+    // 11. RESPONSE
+    const assignedCount = nozzlePriority.reduce((acc, key) => 
       assignments[key] ? acc + 1 : acc, 0
     );
 
-    // 10. RESPONSE
     res.json({
       success: true,
       data: {
         assignments,
         summary: {
           totalOperators: primaryOperators.length,
-          unrestrictedOperators: unrestrictedOperators.length,
-          restrictedOperators: restrictedOperators.length,
+          eligibleOperators: eligibleOperators.length,
           assigned: assignedCount,
           overtime: totalOTCount,
           extra: assignments.Extra ? 1 : 0,
-          supervisorPromoted: assignments.Supervisor?.promotedToSupervisor || false
+          supervisorPromoted: assignments.Supervisor?.promotedToSupervisor || false,
+          airBoyPromoted: assignments.Air?.promotedToAir || false
         }
       }
     });
@@ -288,9 +388,7 @@ exports.autoAssign = async (req, res) => {
     console.error('Auto-assign error:', err);
     res.status(500).json({ success: false, message: err.message });
   }
-};
-
-
+};2786
 
 // --- MAP SAVING (EXISTING + UPDATED) ---
 
@@ -410,3 +508,4 @@ exports.getStats = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+

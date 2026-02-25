@@ -142,13 +142,13 @@ const MemberList = () => {
                                 <Text style={[styles.roleText, { color: roleColor }]}>{item.role}</Text>
                             </View>
 
-                            {/* Restriction Badge Logic */}
+                            {/* ✅ UPDATED: Show correct restriction badge */}
                             {item.nozzleRestriction === true ? (
                                 <View style={styles.restrictionBadge}>
                                     <ShieldAlert size={10} color="#ef4444" />
-                                    <Text style={styles.restrictionText}>RESTRICTED</Text>
+                                    <Text style={styles.restrictionText}>N1-N6 Block</Text>
                                 </View>
-                            ) : item.gender === 'female' ? (
+                            ) : (item.hangingRestriction === true || item.gender === 'female') ? (
                                 <View style={[styles.restrictionBadge, { backgroundColor: '#fef3c7' }]}>
                                     <ShieldAlert size={10} color="#f59e0b" />
                                     <Text style={[styles.restrictionText, { color: '#f59e0b' }]}>No H5/H6</Text>

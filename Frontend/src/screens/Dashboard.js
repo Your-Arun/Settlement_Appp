@@ -87,31 +87,35 @@ const Dashboard = () => {
     if (nozzleSlots.includes(zoneId) && selectedStaffList.length > 0) {
       const staff = selectedStaffList[0];
 
-      // ✅ CHECK 1: Complete nozzle restriction (blocks ALL nozzles)
+      // RULE 1: Complete nozzle restriction
       if (staff.nozzleRestriction === true) {
         Toast.show({
           type: 'error',
-          text1: '⚠️ Completely Restricted',
-          text2: `${staff.name} cannot work on ANY nozzle. Can only be Extra/Air/Supervisor.`,
-          visibilityTime: 3500,
-          position: 'top'
-        });
-        return;
-      }
-
-      // ✅ CHECK 2: Female H5/H6 restriction (only if not completely restricted)
-      if ((zoneId === 'N5' || zoneId === 'N6') && staff.gender === 'female') {
-        Toast.show({
-          type: 'error',
-          text1: '⚠️ Female Restriction',
-          text2: `${staff.name} is female - NOT allowed on H5/H6`,
+          text1: '⚠️ Complete Restriction',
+          text2: `${staff.name} is restricted from ALL nozzles (N1-N6)`,
           visibilityTime: 3000,
           position: 'top'
         });
         return;
       }
-    }
 
+      // RULE 2 & 3: H5/H6 restrictions
+      if (zoneId === 'N5' || zoneId === 'N6') {
+        if (staff.gender === 'female' || staff.hangingRestriction === true) {
+          Toast.show({
+            type: 'error',
+            text1: '⚠️ H5/H6 Restriction',
+            text2: staff.gender === 'female'
+              ? `${staff.name} is female - NOT allowed on H5/H6`
+              : `${staff.name} has hanging restriction - NOT allowed on H5/H6`,
+            visibilityTime: 3000,
+            position: 'top'
+          });
+          return;
+        }
+
+      }
+    }
     const updates = [];
 
     setAssignments(prev => {
@@ -453,17 +457,16 @@ const Dashboard = () => {
                 {renderStaffCircle(staff, 60, false)}
                 <Text style={styles.staffName} numberOfLines={1}>{staff.name}</Text>
 
-                {/* ✅ UPDATED WARNING LOGIC */}
+                {/* ✅ UPDATED WARNING LOGIC - All 3 restriction types */}
                 {staff.nozzleRestriction === true ? (
-                  <Text style={styles.warningText}>⚠️ RESTRICTED</Text>
-                ) : staff.gender === 'female' ? (
+                  <Text style={styles.warningText}>⚠️ N1-N6 Block</Text>
+                ) : (staff.hangingRestriction === true || staff.gender === 'female') ? (
                   <Text style={styles.warningText}>⚠️ No H5/H6</Text>
                 ) : null}
               </View>
             ))}
           </ScrollView>
         </View>
-
         {/* MARK ABSENT BUTTON */}
         <TouchableOpacity
           style={[styles.actionZone, styles.absentZone, selectedStaffList.length > 0 && selectedStaffList.every(s => s.available === 'present') && styles.activeAction]}

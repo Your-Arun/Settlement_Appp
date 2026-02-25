@@ -1,38 +1,71 @@
+// ========================================
+// COMPLETE MEMBER MODEL
+// File: models/Member.js
+// ========================================
+
 const mongoose = require('mongoose');
 
-const MemberSchema = new mongoose.Schema({
-  name: { type: String, required: true },
+const memberSchema = new mongoose.Schema({
+  name: { 
+    type: String, 
+    required: true,
+    trim: true
+  },
   role: { 
     type: String, 
-    enum: ['operator', 'supervisor', 'air boy'],
-    default: 'operator' 
+    enum: ['operator', 'supervisor', 'air boy'], 
+    required: true,
+    lowercase: true
   },
   shift: { 
     type: String, 
-    enum: ['morning', 'evening'],
-    default: 'morning' 
+    enum: ['morning', 'evening'], 
+    required: true,
+    lowercase: true
+  },
+  phoneNumber: { 
+    type: String, 
+    required: true,
+    unique: true
+  },
+  gender: { 
+    type: String, 
+    enum: ['male', 'female'], 
+    default: 'male',
+    lowercase: true
   },
   available: { 
     type: String, 
-    enum: ['present', 'absent'],
-    default: 'present' 
+    enum: ['present', 'absent'], 
+    default: 'present',
+    lowercase: true
   },
-  avatar: { type: String, default: null },
-  phoneNumber: { type: String, required: true },
-  gender: { 
-    type: String, 
-    enum: ['male', 'female'],
-    default: 'male' 
+  avatar: { 
+    type: String,
+    default: null
   },
-  // NEW FIELD: Nozzle 5 & 6 Restriction
+  
+  // ✅ RESTRICTIONS (3 Types)
   nozzleRestriction: { 
     type: Boolean, 
     default: false,
-    // If true, member CANNOT be assigned to nozzle 5 or 6
-  }
-}, { timestamps: true });
+    description: 'Complete block from ALL nozzles (N1-N6)'
+  },
+  
+  hangingRestriction: { 
+    type: Boolean, 
+    default: false,
+    description: 'Block from H5/H6 only'
+  },
+  
+}, { 
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
 
 // Index for faster queries
-MemberSchema.index({ shift: 1, available: 1, role: 1 });
+memberSchema.index({ shift: 1, available: 1 });
+memberSchema.index({ role: 1 });
 
-module.exports = mongoose.model('Member', MemberSchema);
+module.exports = mongoose.model('Member', memberSchema);
