@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Settlement",
-    "slug": "Settlement App",
+    "slug": "Settlement",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -17,7 +17,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.urarun0211.App"
+      "package": "com.urarun0211.Settlement"
     },
     "web": {
       "output": "static",
@@ -37,6 +37,11 @@
         }
       ],
       "@react-native-community/datetimepicker"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "2c5b2c5e-93c3-4ccf-b89e-18001db190d0"
+      }
+    }
   }
 }

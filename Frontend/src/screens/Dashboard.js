@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, TextInput, ActivityIndicator, Platform
 } from 'react-native';
@@ -15,9 +15,8 @@ import Toast from 'react-native-toast-message';
 import { Image } from 'expo-image';
 import axiosInstance from '../api/axiosInstance';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import DateTimePicker from '@react-native-community/datetimepicker';
-// 👇 1. Import AsyncStorage
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 const Dashboard = () => {
   const navigation = useNavigation();
@@ -38,60 +37,65 @@ const Dashboard = () => {
   const [caption, setCaption] = useState('');
   const [selectedStaffList, setSelectedStaffList] = useState([]);
   const [isAutoAssigning, setIsAutoAssigning] = useState(false);
-
-  // 👇 Date Picker State
+  const MEMBERS_CACHE_KEY = 'DASHBOARD_MEMBERS_V1';
+  const ASSIGNMENTS_CACHE_KEY = 'DASHBOARD_ASSIGNMENTS_V1';
   const [showDatePicker, setShowDatePicker] = useState(false);
 
-  // --- DATA LOADING (With Caching) ---
-  useFocusEffect(
-    useCallback(() => {
-      loadInitialData(); // 👈 Pehle Cache check karega
-    }, [])
-  );
-
-  // ✅ New Function: Load Cache First -> Then API
-  const loadInitialData = async () => {
+  const loadCachedData = async () => {
     try {
-      // 1. Instant Load from Cache
-      const cachedMembers = await AsyncStorage.getItem('dashboard_members');
+      const cachedMembers = await AsyncStorage.getItem(MEMBERS_CACHE_KEY);
+      const cachedAssignments = await AsyncStorage.getItem(ASSIGNMENTS_CACHE_KEY);
+  
       if (cachedMembers) {
-        const parsedData = JSON.parse(cachedMembers);
-        setMembers(parsedData);
-        
-        // Absent list bhi turant update karo
-        const dbAbsents = parsedData.filter(m => m.available === 'absent');
+        const parsedMembers = JSON.parse(cachedMembers);
+        setMembers(parsedMembers);
+  
+        const dbAbsents = parsedMembers.filter(m => m.available === 'absent');
         setAssignments(prev => ({ ...prev, absent: dbAbsents }));
       }
-    } catch (e) {
-      console.log("Cache Error", e);
+  
+      if (cachedAssignments) {
+        setAssignments(JSON.parse(cachedAssignments));
+      }
+  
+    } catch (error) {
+      console.log("Cache Load Error", error);
     }
-    
-    // 2. Fetch Fresh Data from API
-    fetchMembers();
   };
+
+  // --- DATA LOADING ---
+  useFocusEffect(
+    useCallback(() => {
+      loadCachedData();  
+      fetchMembers();  
+    }, [])
+  );
 
   const fetchMembers = async () => {
     try {
       const res = await axiosInstance.get('/shifting');
       const formatted = res.data.map(m => ({ ...m, id: m._id }));
-      
+  
       setMembers(formatted);
+  
       const dbAbsents = formatted.filter(m => m.available === 'absent');
       setAssignments(prev => ({ ...prev, absent: dbAbsents }));
-
-      // 3. Save Latest Data to Cache (For next time)
-      await AsyncStorage.setItem('dashboard_members', JSON.stringify(formatted));
-
+  
+      // ✅ Save to cache
+      await AsyncStorage.setItem(MEMBERS_CACHE_KEY, JSON.stringify(formatted));
+  
     } catch (error) {
       console.log("Fetch Error", error);
     }
   };
 
-  // 👇 Handle Date Change
+  // 👇 3. Handle Date Change
   const handleDateChange = (event, selectedDate) => {
-    setShowDatePicker(false);
+    setShowDatePicker(false); // Hide picker
     if (selectedDate) {
-      setDate(selectedDate.toISOString().split('T')[0]);
+      // Format to YYYY-MM-DD
+      const formattedDate = selectedDate.toISOString().split('T')[0];
+      setDate(formattedDate);
     }
   };
 
@@ -214,6 +218,13 @@ const Dashboard = () => {
 
     setSelectedStaffList([]);
   };
+
+  useEffect(() => {
+    AsyncStorage.setItem(
+      ASSIGNMENTS_CACHE_KEY,
+      JSON.stringify(assignments)
+    );
+  }, [assignments]);
 
   const handleAutoAssign = async () => {
     setIsAutoAssigning(true);
@@ -362,7 +373,7 @@ const Dashboard = () => {
     >
       <Text style={styles.zoneLabel}>{label}</Text>
       {assignments[id] ? (
-        renderStaffCircle(assignments[id], 55, true) 
+        renderStaffCircle(assignments[id], 55, true)
       ) : (
         <View style={styles.emptyIcon}>{icon}</View>
       )}
@@ -534,6 +545,7 @@ const Dashboard = () => {
       </ScrollView>
 
       <View style={[styles.navBar, { paddingBottom: 15 + insets.bottom }]}>
+        {/* 👆 insets.bottom add karne se ye Gesture bar ya Buttons ke hisaab se adjust ho jayega */}
         <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('History')}>
           <Calendar color="#64748b" size={26} /><Text style={styles.navText}>History</Text>
         </TouchableOpacity>
