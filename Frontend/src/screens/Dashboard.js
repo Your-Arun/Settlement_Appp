@@ -15,8 +15,9 @@ import Toast from 'react-native-toast-message';
 import { Image } from 'expo-image';
 import axiosInstance from '../api/axiosInstance';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-// 👇 1. Import DatePicker
 import DateTimePicker from '@react-native-community/datetimepicker';
+// 👇 1. Import AsyncStorage
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const Dashboard = () => {
   const navigation = useNavigation();
@@ -38,35 +39,59 @@ const Dashboard = () => {
   const [selectedStaffList, setSelectedStaffList] = useState([]);
   const [isAutoAssigning, setIsAutoAssigning] = useState(false);
 
-  // 👇 2. Date Picker State
+  // 👇 Date Picker State
   const [showDatePicker, setShowDatePicker] = useState(false);
 
-  // --- DATA LOADING ---
+  // --- DATA LOADING (With Caching) ---
   useFocusEffect(
     useCallback(() => {
-      fetchMembers();
+      loadInitialData(); // 👈 Pehle Cache check karega
     }, [])
   );
+
+  // ✅ New Function: Load Cache First -> Then API
+  const loadInitialData = async () => {
+    try {
+      // 1. Instant Load from Cache
+      const cachedMembers = await AsyncStorage.getItem('dashboard_members');
+      if (cachedMembers) {
+        const parsedData = JSON.parse(cachedMembers);
+        setMembers(parsedData);
+        
+        // Absent list bhi turant update karo
+        const dbAbsents = parsedData.filter(m => m.available === 'absent');
+        setAssignments(prev => ({ ...prev, absent: dbAbsents }));
+      }
+    } catch (e) {
+      console.log("Cache Error", e);
+    }
+    
+    // 2. Fetch Fresh Data from API
+    fetchMembers();
+  };
 
   const fetchMembers = async () => {
     try {
       const res = await axiosInstance.get('/shifting');
       const formatted = res.data.map(m => ({ ...m, id: m._id }));
+      
       setMembers(formatted);
       const dbAbsents = formatted.filter(m => m.available === 'absent');
       setAssignments(prev => ({ ...prev, absent: dbAbsents }));
+
+      // 3. Save Latest Data to Cache (For next time)
+      await AsyncStorage.setItem('dashboard_members', JSON.stringify(formatted));
+
     } catch (error) {
       console.log("Fetch Error", error);
     }
   };
 
-  // 👇 3. Handle Date Change
+  // 👇 Handle Date Change
   const handleDateChange = (event, selectedDate) => {
-    setShowDatePicker(false); // Hide picker
+    setShowDatePicker(false);
     if (selectedDate) {
-      // Format to YYYY-MM-DD
-      const formattedDate = selectedDate.toISOString().split('T')[0];
-      setDate(formattedDate);
+      setDate(selectedDate.toISOString().split('T')[0]);
     }
   };
 
@@ -337,7 +362,7 @@ const Dashboard = () => {
     >
       <Text style={styles.zoneLabel}>{label}</Text>
       {assignments[id] ? (
-        renderStaffCircle(assignments[id], 55, true)
+        renderStaffCircle(assignments[id], 55, true) 
       ) : (
         <View style={styles.emptyIcon}>{icon}</View>
       )}
@@ -509,7 +534,6 @@ const Dashboard = () => {
       </ScrollView>
 
       <View style={[styles.navBar, { paddingBottom: 15 + insets.bottom }]}>
-        {/* 👆 insets.bottom add karne se ye Gesture bar ya Buttons ke hisaab se adjust ho jayega */}
         <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('History')}>
           <Calendar color="#64748b" size={26} /><Text style={styles.navText}>History</Text>
         </TouchableOpacity>

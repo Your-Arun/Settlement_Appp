@@ -1,29 +1,52 @@
 import React, { useEffect, useState } from 'react';
 import { 
-  View, Text, FlatList, Image, TouchableOpacity, Alert, StyleSheet, Modal, Share 
+  View, Text, FlatList, TouchableOpacity, Alert, StyleSheet, Modal, Share 
 } from 'react-native';
+// 👇 1. Import AsyncStorage
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Trash2, ChevronLeft, Calendar, X, Share2 } from 'lucide-react-native';
+import { Image } from 'expo-image'; // Fast Image use karein
 import axiosInstance from '../api/axiosInstance';
 import Toast from 'react-native-toast-message';
 
 const History = ({ navigation }) => {
   const [maps, setMaps] = useState([]);
-  const [selectedImage, setSelectedImage] = useState(null); // 👈 State for Full Screen View
+  const [selectedImage, setSelectedImage] = useState(null);
 
   useEffect(() => {
-    fetchMaps();
+    loadMaps();
   }, []);
 
-  const fetchMaps = async () => {
+  // ✅ New Function: Load from Cache -> Then Fetch API
+  const loadMaps = async () => {
+    try {
+      // 1. Pehle Local Cache se data dikhao (Instant)
+      const cachedData = await AsyncStorage.getItem('history_maps');
+      if (cachedData) {
+        setMaps(JSON.parse(cachedData));
+      }
+
+      // 2. Phir Network se latest data laao (Background)
+      fetchFromApi();
+      
+    } catch (error) {
+      console.log("Cache Load Error:", error);
+    }
+  };
+
+  const fetchFromApi = async () => {
     try {
       const res = await axiosInstance.get('/all-maps');
       if (res.data.success) {
         setMaps(res.data.maps);
+        // 3. Latest data ko cache mein save kar lo agli baar ke liye
+        await AsyncStorage.setItem('history_maps', JSON.stringify(res.data.maps));
       }
     } catch (error) {
-      console.log(error);
-      Toast.show({ type: 'error', text1: 'Failed to load history' });
+      console.log("API Error:", error);
+      // Agar API fail ho jaye, to purana data cache se dikhta rahega (User ko blank screen nahi dikhegi)
+      // Toast.show({ type: 'error', text1: 'Updating failed' });
     }
   };
 
@@ -36,7 +59,14 @@ const History = ({ navigation }) => {
         onPress: async () => {
           try {
             await axiosInstance.delete(`/delete-map/${id}`);
-            setMaps(prev => prev.filter(m => m._id !== id));
+            
+            // UI Update
+            const updatedMaps = maps.filter(m => m._id !== id);
+            setMaps(updatedMaps);
+            
+            // Cache Update (Delete hone ke baad cache bhi update karo)
+            await AsyncStorage.setItem('history_maps', JSON.stringify(updatedMaps));
+
             Toast.show({ type: 'success', text1: 'Deleted successfully' });
           } catch (e) {
             Toast.show({ type: 'error', text1: 'Failed to delete' });
@@ -46,7 +76,6 @@ const History = ({ navigation }) => {
     ]);
   };
 
-  // Function to Share Image URL
   const handleShare = async (imageUrl) => {
     try {
       await Share.share({
@@ -61,10 +90,16 @@ const History = ({ navigation }) => {
   const renderItem = ({ item }) => (
     <TouchableOpacity 
       activeOpacity={0.9} 
-      onPress={() => setSelectedImage(item.image)} // 👈 Click to Open Full View
+      onPress={() => setSelectedImage(item.image)} 
       style={styles.card}
     >
-      <Image source={{ uri: item.image }} style={styles.image} resizeMode="cover" />
+      {/* Fast Image for better performance */}
+      <Image 
+        source={{ uri: item.image }} 
+        style={styles.image} 
+        contentFit="cover" 
+        transition={300} 
+      />
       
       <View style={styles.info}>
         <View>
@@ -74,7 +109,6 @@ const History = ({ navigation }) => {
             </View>
         </View>
         
-        {/* Delete Button */}
         <TouchableOpacity onPress={() => handleDelete(item._id)} style={styles.delBtn}>
             <Trash2 color="#ef4444" size={20} />
         </TouchableOpacity>
@@ -84,8 +118,9 @@ const History = ({ navigation }) => {
   );
 
   return (
+    // ✅ SafeAreaView Fixed
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
-      {/* Header */}
+      
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
             <ChevronLeft color="#333" size={24} />
@@ -107,7 +142,7 @@ const History = ({ navigation }) => {
           />
       )}
 
-      {/* 👇 FULL SCREEN IMAGE MODAL 👇 */}
+      {/* Full Screen Modal */}
       <Modal 
         visible={selectedImage !== null} 
         transparent={true} 
@@ -115,8 +150,6 @@ const History = ({ navigation }) => {
         onRequestClose={() => setSelectedImage(null)}
       >
         <View style={styles.modalContainer}>
-          
-          {/* Top Buttons (Close & Share) */}
           <View style={styles.modalControls}>
             <TouchableOpacity onPress={() => setSelectedImage(null)} style={styles.controlBtn}>
               <X color="white" size={24} />
@@ -127,11 +160,10 @@ const History = ({ navigation }) => {
             </TouchableOpacity>
           </View>
 
-          {/* Full Image */}
           <Image 
             source={{ uri: selectedImage }} 
             style={styles.fullImage} 
-            resizeMode="contain" 
+            contentFit="contain"
           />
         </View>
       </Modal>
@@ -145,7 +177,6 @@ const styles = StyleSheet.create({
     header: { padding: 20, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'white', borderBottomWidth:1, borderColor:'#eee' },
     title: { fontSize: 20, fontWeight: '900', color: '#1e293b' },
     
-    // Card Styles
     card: { backgroundColor: 'white', borderRadius: 15, marginBottom: 20, overflow: 'hidden', elevation: 3, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 5 },
     image: { width: '100%', height: 200, backgroundColor: '#eee' },
     info: { padding: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -158,7 +189,6 @@ const styles = StyleSheet.create({
     delBtn: { padding: 10, backgroundColor: '#fef2f2', borderRadius: 10 },
     empty: { flex:1, justifyContent:'center', alignItems:'center' },
 
-    // Modal Styles
     modalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', alignItems: 'center' },
     fullImage: { width: '100%', height: '80%' },
     modalControls: { position: 'absolute', top: 50, right: 20, flexDirection: 'row', gap: 15, zIndex: 10 },

@@ -10,6 +10,7 @@ import { Image } from 'expo-image';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import axiosInstance from '../api/axiosInstance';
 import Toast from 'react-native-toast-message';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const MemberList = () => {
     const navigation = useNavigation();
@@ -19,32 +20,55 @@ const MemberList = () => {
     const [refreshing, setRefreshing] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
 
+    const CACHE_KEY = 'MEMBERS_CACHE_V1';
+
+    const loadCachedMembers = async () => {
+        try {
+          const cached = await AsyncStorage.getItem(CACHE_KEY);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            setMembers(parsed);
+            setFilteredMembers(parsed);
+            setLoading(false); // show cached instantly
+          }
+        } catch (error) {
+          console.log('Cache Load Error:', error);
+        }
+      };
     const fetchMembers = async () => {
         try {
-            const res = await axiosInstance.get('/shifting');
-            const sorted = res.data.sort((a, b) => a.name.localeCompare(b.name));
-            setMembers(sorted);
-            setFilteredMembers(sorted);
+          const res = await axiosInstance.get('/shifting');
+          const sorted = res.data.sort((a, b) => a.name.localeCompare(b.name));
+      
+          setMembers(sorted);
+          setFilteredMembers(sorted);
+      
+          // ✅ Save to cache
+          await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(sorted));
+      
         } catch (error) {
-            console.log("Fetch Error", error);
-            Toast.show({
-                type: 'error',
-                text1: 'Error',
-                text2: 'Failed to load members list',
-                position: 'top'
-            });
+          console.log("Fetch Error", error);
+      
+          Toast.show({
+            type: 'error',
+            text1: 'Error',
+            text2: 'Failed to load members list',
+            position: 'top'
+          });
         } finally {
-            setLoading(false);
-            setRefreshing(false);
+          setLoading(false);
+          setRefreshing(false);
         }
-    };
+      };
 
     useFocusEffect(
         useCallback(() => {
-            fetchMembers();
+          loadCachedMembers();
+          fetchMembers(); 
         }, [])
-    );
+      );
 
+      
     const handleSearch = (text) => {
         setSearchQuery(text);
         if (text) {
