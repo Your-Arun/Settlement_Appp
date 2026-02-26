@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import {
-    View, Text, FlatList, TouchableOpacity,  Alert, StyleSheet, TextInput, RefreshControl, ActivityIndicator
+    View, Text, FlatList, TouchableOpacity, Alert, StyleSheet, TextInput, RefreshControl, ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -19,11 +19,9 @@ const MemberList = () => {
     const [refreshing, setRefreshing] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
 
-    // --- FETCH MEMBERS ---
     const fetchMembers = async () => {
         try {
             const res = await axiosInstance.get('/shifting');
-            // Sort by Name (A-Z)
             const sorted = res.data.sort((a, b) => a.name.localeCompare(b.name));
             setMembers(sorted);
             setFilteredMembers(sorted);
@@ -47,7 +45,6 @@ const MemberList = () => {
         }, [])
     );
 
-    // --- SEARCH LOGIC ---
     const handleSearch = (text) => {
         setSearchQuery(text);
         if (text) {
@@ -63,7 +60,6 @@ const MemberList = () => {
         }
     };
 
-    // --- DELETE LOGIC ---
     const handleDelete = (id, name) => {
         Alert.alert(
             "Delete Member",
@@ -97,9 +93,7 @@ const MemberList = () => {
         );
     };
 
-    // --- RENDER ITEM ---
     const renderItem = ({ item }) => {
-        // Role Color Logic
         const isSupervisor = item.role.toLowerCase() === 'supervisor';
         const isAirBoy = item.role.toLowerCase() === 'air boy';
 
@@ -114,12 +108,12 @@ const MemberList = () => {
                     <View style={styles.avatarContainer}>
                         {item.avatar ? (
                             <Image
-                            source={{ uri: item.avatar }}
-                            style={styles.avatarImage}
-                            contentFit="cover"       
-                            transition={500}          
-                            cachePolicy="memory-disk" 
-                        />
+                                source={{ uri: item.avatar }}
+                                style={styles.avatarImage}
+                                contentFit="cover"       
+                                transition={500}          
+                                cachePolicy="memory-disk" 
+                            />
                         ) : (
                             <View style={[styles.avatarImage, styles.letterAvatar]}>
                                 <Text style={styles.letterText}>
@@ -138,15 +132,12 @@ const MemberList = () => {
                             <Text style={styles.phone}>{item.phoneNumber}</Text>
                         </View>
 
-                        {/* ✅ UPDATED: Badge showing logic */}
                         <View style={styles.badgeRow}>
-                            {/* Role Badge */}
                             <View style={[styles.roleBadge, { backgroundColor: roleBg }]}>
                                 <RoleIcon size={10} color={roleColor} />
                                 <Text style={[styles.roleText, { color: roleColor }]}>{item.role}</Text>
                             </View>
 
-                            {/* ✅ UPDATED: Show correct restriction badge */}
                             {item.nozzleRestriction === true ? (
                                 <View style={styles.restrictionBadge}>
                                     <ShieldAlert size={10} color="#ef4444" />
@@ -183,7 +174,8 @@ const MemberList = () => {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
+            
             {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
@@ -286,7 +278,6 @@ const styles = StyleSheet.create({
     row: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
     phone: { fontSize: 12, color: '#64748b', fontWeight: '500' },
 
-    // Badge Styles
     badgeRow: {
         flexDirection: 'row',
         alignItems: 'center',

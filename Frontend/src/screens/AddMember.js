@@ -3,6 +3,8 @@ import {
   View, Text, TextInput, TouchableOpacity,  StyleSheet,
   ScrollView, ActivityIndicator, Alert, Linking, Switch
 } from 'react-native';
+// 👇 1. Import SafeAreaView
+import { SafeAreaView } from 'react-native-safe-area-context'; 
 import * as ImagePicker from 'expo-image-picker';
 import axiosInstance from '../api/axiosInstance';
 import { Feather } from '@expo/vector-icons';
@@ -14,7 +16,6 @@ const AddMember = ({ navigation, route }) => {
   const memberToEdit = route.params?.memberToEdit;
   const [loading, setLoading] = useState(false);
 
-  // ✅ Form Data (with nozzleRestriction)
   const [formData, setFormData] = useState({
     name: memberToEdit?.name || '',
     role: memberToEdit?.role || 'operator',
@@ -25,16 +26,13 @@ const AddMember = ({ navigation, route }) => {
     hangingRestriction: memberToEdit?.hangingRestriction || false,
   });
 
-  // ✅ Error State for Validation
   const [errors, setErrors] = useState({});
   const [image, setImage] = useState(null);
 
-  // 🛡️ Helper: Validate Inputs
   const validate = () => {
     let newErrors = {};
     let isValid = true;
 
-    // Name Validation
     if (!formData.name.trim()) {
       newErrors.name = 'Full Name is required';
       isValid = false;
@@ -43,7 +41,6 @@ const AddMember = ({ navigation, route }) => {
       isValid = false;
     }
 
-    // Phone Validation (Indian 10 digits)
     const phoneRegex = /^[0-9]{10}$/;
     if (!formData.phoneNumber) {
       newErrors.phoneNumber = 'Phone Number is required';
@@ -57,7 +54,6 @@ const AddMember = ({ navigation, route }) => {
     return isValid;
   };
 
-  // 🛡️ Helper: Handle Permission Denial
   const handlePermissionDenied = (permissionName) => {
     Alert.alert(
       "Permission Required",
@@ -69,7 +65,6 @@ const AddMember = ({ navigation, route }) => {
     );
   };
 
-  // 📸 Option Picker
   const handleImagePick = () => {
     Alert.alert(
       "Upload Photo",
@@ -82,7 +77,6 @@ const AddMember = ({ navigation, route }) => {
     );
   };
 
-  // 📸 Camera Logic
   const openCamera = async () => {
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -99,7 +93,6 @@ const AddMember = ({ navigation, route }) => {
     }
   };
 
-  // 🖼️ Gallery Logic
   const openGallery = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -117,9 +110,7 @@ const AddMember = ({ navigation, route }) => {
     }
   };
 
-  // 🚀 Submit Logic
   const handleSubmit = async () => {
-    // 1. Run Validation
     if (!validate()) {
       Toast.show({
         type: 'error',
@@ -138,8 +129,8 @@ const AddMember = ({ navigation, route }) => {
     data.append('phoneNumber', formData.phoneNumber);
     data.append('available', 'present');
     data.append('gender', formData.gender);
-    data.append('nozzleRestriction', formData.nozzleRestriction); // ✅ NEW
-    data.append('hangingRestriction', formData.hangingRestriction);  // ⭐ NEW
+    data.append('nozzleRestriction', formData.nozzleRestriction); 
+    data.append('hangingRestriction', formData.hangingRestriction);
 
     if (image) {
       let filename = image.uri.split('/').pop();
@@ -191,194 +182,190 @@ const AddMember = ({ navigation, route }) => {
   };
 
   return (
-    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Feather name="arrow-left" color="#333" size={24} />
-        </TouchableOpacity>
-        <Text style={styles.title}>{memberToEdit ? "Edit Staff" : "Add Staff"}</Text>
-      </View>
+    // 👇 2. SafeAreaView Wrapper (Edges define where to apply padding)
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
+      <ScrollView keyboardShouldPersistTaps="handled">
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <Feather name="arrow-left" color="#333" size={24} />
+          </TouchableOpacity>
+          <Text style={styles.title}>{memberToEdit ? "Edit Staff" : "Add Staff"}</Text>
+        </View>
 
-      <View style={styles.form}>
-        {/* Photo Upload */}
-        <TouchableOpacity onPress={handleImagePick} style={styles.imageWrapper}>
-          <View style={styles.imageContainer}>
-            {getAvatarSource() ? (
-              <Image 
-              source={getAvatarSource()} 
-              style={styles.preview} 
-              contentFit="cover"
-              transition={300}
-              cachePolicy="memory-disk" 
-          />
-            ) : (
-              <View style={styles.placeholder}>
-                <Feather name="camera" color="#94a3b8" size={32} />
-                <Text style={styles.uploadText}>Tap to Upload</Text>
+        <View style={styles.form}>
+          <TouchableOpacity onPress={handleImagePick} style={styles.imageWrapper}>
+            <View style={styles.imageContainer}>
+              {getAvatarSource() ? (
+                <Image 
+                  source={getAvatarSource()} 
+                  style={styles.preview} 
+                  contentFit="cover"
+                  transition={300}
+                  cachePolicy="memory-disk" 
+                />
+              ) : (
+                <View style={styles.placeholder}>
+                  <Feather name="camera" color="#94a3b8" size={32} />
+                  <Text style={styles.uploadText}>Tap to Upload</Text>
+                </View>
+              )}
+            </View>
+            <View style={styles.editBadge}>
+              <Feather name="edit-2" size={12} color="#fff" />
+            </View>
+          </TouchableOpacity>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Full Name <Text style={styles.req}>*</Text></Text>
+            <TextInput
+              placeholder="Ex: Rahul Kumar"
+              style={[styles.input, errors.name && styles.inputError]}
+              value={formData.name}
+              onChangeText={t => {
+                setFormData({ ...formData, name: t });
+                if (errors.name) setErrors({ ...errors, name: null }); 
+              }}
+            />
+            {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Phone Number <Text style={styles.req}>*</Text></Text>
+            <TextInput
+              placeholder="9876543210"
+              keyboardType="phone-pad"
+              maxLength={10}
+              style={[styles.input, errors.phoneNumber && styles.inputError]}
+              value={formData.phoneNumber}
+              onChangeText={t => {
+                setFormData({ ...formData, phoneNumber: t });
+                if (errors.phoneNumber) setErrors({ ...errors, phoneNumber: null });
+              }}
+            />
+            {errors.phoneNumber && <Text style={styles.errorText}>{errors.phoneNumber}</Text>}
+          </View>
+
+          <Text style={styles.label}>Role</Text>
+          <View style={styles.row}>
+            {['operator', 'supervisor', 'air boy'].map((r) => (
+              <TouchableOpacity
+                key={r} onPress={() => setFormData({ ...formData, role: r })}
+                style={[styles.chip, formData.role === r && styles.activeChip]}
+              >
+                <Text style={formData.role === r ? styles.activeText : styles.text}>
+                  {r.charAt(0).toUpperCase() + r.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.label}>Gender</Text>
+          <View style={styles.row}>
+            {['male', 'female'].map((g) => (
+              <TouchableOpacity
+                key={g} onPress={() => setFormData({ ...formData, gender: g })}
+                style={[styles.chip, formData.gender === g && styles.activeChip]}
+              >
+                <Text style={formData.gender === g ? styles.activeText : styles.text}>
+                  {g.charAt(0).toUpperCase() + g.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.label}>Shift</Text>
+          <View style={styles.row}>
+            {['morning', 'evening'].map((s) => (
+              <TouchableOpacity
+                key={s} onPress={() => setFormData({ ...formData, shift: s })}
+                style={[styles.chip, formData.shift === s && styles.activeChip]}
+              >
+                <Text style={formData.shift === s ? styles.activeText : styles.text}>
+                  {s.charAt(0).toUpperCase() + s.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={styles.restrictionCard}>
+            <View style={styles.restrictionHeader}>
+              <View style={styles.restrictionTitleRow}>
+                <ShieldAlert size={20} color={formData.nozzleRestriction ? "#ef4444" : "#94a3b8"} />
+                <Text style={styles.restrictionTitle}>Nozzle Restriction</Text>
+              </View>
+              <Switch
+                value={formData.nozzleRestriction}
+                onValueChange={(value) => setFormData({ ...formData, nozzleRestriction: value })}
+                trackColor={{ false: '#cbd5e1', true: '#fca5a5' }}
+                thumbColor={formData.nozzleRestriction ? '#ef4444' : '#f1f5f9'}
+              />
+            </View>
+            <Text style={styles.restrictionDesc}>
+              {formData.nozzleRestriction
+                ? '🔒 COMPLETELY RESTRICTED: Cannot work on ANY nozzle (N1-N6). Can only be Extra/Air/Supervisor.'
+                : '✅ This member can work on all nozzles'
+              }
+            </Text>
+            {formData.gender === 'female' && !formData.nozzleRestriction && (
+              <View style={styles.warningBox}>
+                <Text style={styles.warningText}>
+                  ⚠️ Female operators are automatically blocked from H5/H6 only
+                </Text>
+              </View>
+            )}
+            {formData.gender === 'female' && formData.nozzleRestriction && (
+              <View style={styles.warningBox}>
+                <Text style={styles.warningText}>
+                  ⚠️ Female + Restricted = Blocked from ALL nozzles
+                </Text>
               </View>
             )}
           </View>
-          {/* Edit Icon badge */}
-          <View style={styles.editBadge}>
-            <Feather name="edit-2" size={12} color="#fff" />
-          </View>
-        </TouchableOpacity>
 
-        {/* Name Input */}
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Full Name <Text style={styles.req}>*</Text></Text>
-          <TextInput
-            placeholder="Ex: Rahul Kumar"
-            style={[styles.input, errors.name && styles.inputError]}
-            value={formData.name}
-            onChangeText={t => {
-              setFormData({ ...formData, name: t });
-              if (errors.name) setErrors({ ...errors, name: null }); // Clear error on type
-            }}
-          />
-          {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
-        </View>
-
-        {/* Phone Input */}
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Phone Number <Text style={styles.req}>*</Text></Text>
-          <TextInput
-            placeholder="9876543210"
-            keyboardType="phone-pad"
-            maxLength={10}
-            style={[styles.input, errors.phoneNumber && styles.inputError]}
-            value={formData.phoneNumber}
-            onChangeText={t => {
-              setFormData({ ...formData, phoneNumber: t });
-              if (errors.phoneNumber) setErrors({ ...errors, phoneNumber: null });
-            }}
-          />
-          {errors.phoneNumber && <Text style={styles.errorText}>{errors.phoneNumber}</Text>}
-        </View>
-
-        {/* Selectors */}
-        <Text style={styles.label}>Role</Text>
-        <View style={styles.row}>
-          {['operator', 'supervisor', 'air boy'].map((r) => (
-            <TouchableOpacity
-              key={r} onPress={() => setFormData({ ...formData, role: r })}
-              style={[styles.chip, formData.role === r && styles.activeChip]}
-            >
-              <Text style={formData.role === r ? styles.activeText : styles.text}>
-                {r.charAt(0).toUpperCase() + r.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <Text style={styles.label}>Gender</Text>
-        <View style={styles.row}>
-          {['male', 'female'].map((g) => (
-            <TouchableOpacity
-              key={g} onPress={() => setFormData({ ...formData, gender: g })}
-              style={[styles.chip, formData.gender === g && styles.activeChip]}
-            >
-              <Text style={formData.gender === g ? styles.activeText : styles.text}>
-                {g.charAt(0).toUpperCase() + g.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <Text style={styles.label}>Shift</Text>
-        <View style={styles.row}>
-          {['morning', 'evening'].map((s) => (
-            <TouchableOpacity
-              key={s} onPress={() => setFormData({ ...formData, shift: s })}
-              style={[styles.chip, formData.shift === s && styles.activeChip]}
-            >
-              <Text style={formData.shift === s ? styles.activeText : styles.text}>
-                {s.charAt(0).toUpperCase() + s.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* ✅ UPDATED: H5/H6 Restriction Toggle with complete restriction text */}
-        <View style={styles.restrictionCard}>
-          <View style={styles.restrictionHeader}>
-            <View style={styles.restrictionTitleRow}>
-              <ShieldAlert size={20} color={formData.nozzleRestriction ? "#ef4444" : "#94a3b8"} />
-              <Text style={styles.restrictionTitle}>Nozzle Restriction</Text>
+          <View style={styles.restrictionCard}>
+            <View style={styles.restrictionHeader}>
+              <View style={styles.restrictionTitleRow}>
+                <ShieldAlert size={20} color={formData.hangingRestriction ? "#f59e0b" : "#94a3b8"} />
+                <Text style={styles.restrictionTitle}>H5/H6 Restriction</Text>
+              </View>
+              <Switch
+                value={formData.hangingRestriction}
+                onValueChange={(value) => setFormData({ ...formData, hangingRestriction: value })}
+                trackColor={{ false: '#cbd5e1', true: '#fef3c7' }}
+                thumbColor={formData.hangingRestriction ? '#f59e0b' : '#f1f5f9'}
+              />
             </View>
-            <Switch
-              value={formData.nozzleRestriction}
-              onValueChange={(value) => setFormData({ ...formData, nozzleRestriction: value })}
-              trackColor={{ false: '#cbd5e1', true: '#fca5a5' }}
-              thumbColor={formData.nozzleRestriction ? '#ef4444' : '#f1f5f9'}
-            />
-          </View>
-          <Text style={styles.restrictionDesc}>
-            {formData.nozzleRestriction
-              ? '🔒 COMPLETELY RESTRICTED: Cannot work on ANY nozzle (N1-N6). Can only be Extra/Air/Supervisor.'
-              : '✅ This member can work on all nozzles'
-            }
-          </Text>
-          {formData.gender === 'female' && !formData.nozzleRestriction && (
-            <View style={styles.warningBox}>
-              <Text style={styles.warningText}>
-                ⚠️ Female operators are automatically blocked from H5/H6 only
-              </Text>
-            </View>
-          )}
-          {formData.gender === 'female' && formData.nozzleRestriction && (
-            <View style={styles.warningBox}>
-              <Text style={styles.warningText}>
-                ⚠️ Female + Restricted = Blocked from ALL nozzles
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* ⭐ NEW: Hanging Restriction Toggle */}
-        <View style={styles.restrictionCard}>
-          <View style={styles.restrictionHeader}>
-            <View style={styles.restrictionTitleRow}>
-              <ShieldAlert size={20} color={formData.hangingRestriction ? "#f59e0b" : "#94a3b8"} />
-              <Text style={styles.restrictionTitle}>H5/H6 Restriction</Text>
-            </View>
-            <Switch
-              value={formData.hangingRestriction}
-              onValueChange={(value) => setFormData({ ...formData, hangingRestriction: value })}
-              trackColor={{ false: '#cbd5e1', true: '#fef3c7' }}
-              thumbColor={formData.hangingRestriction ? '#f59e0b' : '#f1f5f9'}
-            />
-          </View>
-          <Text style={styles.restrictionDesc}>
-            {formData.hangingRestriction
-              ? '🔒 This member is BLOCKED from H5/H6 only'
-              : '✅ This member can work on H5/H6'
-            }
-          </Text>
-        </View>
-
-        {/* Submit Button */}
-        <TouchableOpacity
-          onPress={handleSubmit}
-          style={[styles.submitBtn, loading && styles.disabledBtn]}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.submitText}>
-              {memberToEdit ? "Update Staff Details" : "Save Staff Member"}
+            <Text style={styles.restrictionDesc}>
+              {formData.hangingRestriction
+                ? '🔒 This member is BLOCKED from H5/H6 only'
+                : '✅ This member can work on H5/H6'
+              }
             </Text>
-          )}
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+          </View>
+
+          <TouchableOpacity
+            onPress={handleSubmit}
+            style={[styles.submitBtn, loading && styles.disabledBtn]}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.submitText}>
+                {memberToEdit ? "Update Staff Details" : "Save Staff Member"}
+              </Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#ffffff' },
-  header: { padding: 20, flexDirection: 'row', alignItems: 'center', marginTop: 30 },
+  // 👇 3. Updated Header style (marginTop removed)
+  header: { padding: 20, flexDirection: 'row', alignItems: 'center', marginTop: 10 },
   backBtn: { padding: 8, borderRadius: 8, backgroundColor: '#f1f5f9', marginRight: 15 },
   title: { fontSize: 22, fontWeight: '800', color: '#1e293b' },
 
@@ -417,7 +404,6 @@ const styles = StyleSheet.create({
   text: { color: '#64748b', fontSize: 13, fontWeight: '500' },
   activeText: { color: '#fff', fontSize: 13, fontWeight: '600' },
 
-  // ✅ NEW: Restriction Card Styles
   restrictionCard: {
     backgroundColor: '#f8fafc',
     borderRadius: 12,

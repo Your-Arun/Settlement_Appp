@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, TextInput, ActivityIndicator, Platform
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   RefreshCw, Save, Settings, Plus, Wind, ShieldCheck, AlertCircle,
   Calendar, X, UserPlus, MessageSquare, ChevronRight, Check, UserCheck,
@@ -16,10 +16,11 @@ import { Image } from 'expo-image';
 import axiosInstance from '../api/axiosInstance';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 // 👇 1. Import DatePicker
-import DateTimePicker from '@react-native-community/datetimepicker'; 
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 const Dashboard = () => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const mapRef = useRef();
 
   // --- STATE ---
@@ -74,9 +75,9 @@ const Dashboard = () => {
     setSelectedStaffList(prev => {
       const isSelected = prev.find(s => s.id === staff.id);
       if (isSelected) {
-        return prev.filter(s => s.id !== staff.id); 
+        return prev.filter(s => s.id !== staff.id);
       } else {
-        return [...prev, staff]; 
+        return [...prev, staff];
       }
     });
   };
@@ -96,7 +97,7 @@ const Dashboard = () => {
       });
       return;
     }
-    
+
     const nozzleSlots = ['N1', 'N2', 'N3', 'N4', 'N5', 'N6'];
 
     if (nozzleSlots.includes(zoneId) && selectedStaffList.length > 0) {
@@ -336,7 +337,7 @@ const Dashboard = () => {
     >
       <Text style={styles.zoneLabel}>{label}</Text>
       {assignments[id] ? (
-        renderStaffCircle(assignments[id], 55, true) 
+        renderStaffCircle(assignments[id], 55, true)
       ) : (
         <View style={styles.emptyIcon}>{icon}</View>
       )}
@@ -344,7 +345,7 @@ const Dashboard = () => {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']} >
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>PUMP MANAGEMENT</Text>
@@ -368,7 +369,7 @@ const Dashboard = () => {
           {/* 👇 4. Date Picker Trigger */}
           <View style={{ position: 'absolute', top: 30, right: 25, zIndex: 1 }}>
             <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.dateBox}>
-              <Calendar size={14} color="#1e40af" style={{marginRight: 4}}/>
+              <Calendar size={14} color="#1e40af" style={{ marginRight: 4 }} />
               <Text style={styles.dateText}>{date}</Text>
             </TouchableOpacity>
           </View>
@@ -460,7 +461,7 @@ const Dashboard = () => {
             ))}
           </ScrollView>
         </View>
-        
+
         <TouchableOpacity
           style={[styles.actionZone, styles.absentZone, selectedStaffList.length > 0 && selectedStaffList.every(s => s.available === 'present') && styles.activeAction]}
           onPress={() => handleZoneTap('absent')}
@@ -507,7 +508,8 @@ const Dashboard = () => {
 
       </ScrollView>
 
-      <View style={styles.navBar}>
+      <View style={[styles.navBar, { paddingBottom: 15 + insets.bottom }]}>
+        {/* 👆 insets.bottom add karne se ye Gesture bar ya Buttons ke hisaab se adjust ho jayega */}
         <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('History')}>
           <Calendar color="#64748b" size={26} /><Text style={styles.navText}>History</Text>
         </TouchableOpacity>
@@ -591,11 +593,11 @@ const styles = StyleSheet.create({
   hangingText: { fontSize: 12, fontWeight: 'bold', color: '#334155' },
   mpdBox: { width: 100, height: 50, backgroundColor: '#1e293b', borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
   mpdText: { color: 'white', fontWeight: '900' },
-  
+
   // ✅ Updated Date Box to be clickable
   dateBox: { backgroundColor: '#eff6ff', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 15, borderWidth: 2, borderColor: '#3b82f6', flexDirection: 'row', alignItems: 'center' },
   dateText: { fontSize: 10, fontWeight: 'bold', color: '#1e40af' },
-  
+
   zone: { width: 60, height: 60, borderRadius: 30, borderWidth: 2, borderColor: '#cbd5e1', borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc' },
   filledZone: { borderStyle: 'solid', borderColor: '#3b82f6', backgroundColor: '#eff6ff' },
   zoneLabel: { position: 'absolute', top: -8, backgroundColor: '#334155', color: 'white', fontSize: 8, paddingHorizontal: 6, borderRadius: 8, overflow: 'hidden' },
