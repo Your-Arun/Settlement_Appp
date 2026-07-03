@@ -1,4 +1,4 @@
-# ⛽ SmartPump: Intelligent Fuel Station Shift & Staff Manager
+# ⛽ Settlement: Intelligent Fuel Station Shift & Staff Manager
 
 [![React Native](https://img.shields.io/badge/Frontend-React%20Native%20%7C%20Expo-blue?style=for-the-badge&logo=react)](https://reactnative.dev)
 [![Node.js](https://img.shields.io/badge/Backend-Node.js%20%7C%20Express-green?style=for-the-badge&logo=node.js)](https://nodejs.org)
@@ -6,7 +6,7 @@
 [![Twilio](https://img.shields.io/badge/SMS-Twilio-red?style=for-the-badge&logo=twilio)](https://www.twilio.com)
 [![Cloudinary](https://img.shields.io/badge/Cloud-Cloudinary-blueviolet?style=for-the-badge&logo=cloudinary)](https://cloudinary.com)
 
-**SmartPump** is a production-grade, full-stack mobile and backend application designed to automate shift scheduling, employee role allocation, and rule-based nozzle assignments at busy fuel stations. By replacing manual registers with a smart scheduling engine and instant messaging, it eliminates human error, optimizes overtime costs, and ensures strict safety compliance.
+**Settlement** is a production-grade, full-stack mobile and backend application designed to automate shift scheduling, employee role allocation, and rule-based nozzle assignments at busy fuel stations. By replacing manual registers with a smart scheduling engine and instant messaging, it eliminates human error, optimizes overtime costs, and ensures strict safety compliance.
 
 ---
 
@@ -35,7 +35,7 @@ Managing shifts at fuel stations is highly complex:
 5. **Safety Constraints**: Having adjacent nozzles staffed by overtime workers poses a fatigue/safety risk, which must be blocked.
 
 ### **The Solution**
-**SmartPump** automates this entire workflow in one tap. The manager enters the date, selects a shift (Morning/Evening), clicks **"Auto Assign"**, and the system instantly generates an optimized, complaint shift chart, stores a visual layout snapshot in the cloud, and shares it with the team.
+**Settlement** automates this entire workflow in one tap. The manager enters the date, selects a shift (Morning/Evening), clicks **"Auto Assign"**, and the system instantly generates an optimized, complaint shift chart, stores a visual layout snapshot in the cloud, and shares it with the team.
 
 ---
 
@@ -152,7 +152,7 @@ npm install
 Create a `.env` file in the `Backend` directory:
 ```env
 PORT=5000
-MONGODB_URI=mongodb+srv://your_username:your_password@cluster.mongodb.net/smartpump
+MONGODB_URI=mongodb+srv://your_username:your_password@cluster.mongodb.net/settlement
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_api_key
 CLOUDINARY_API_SECRET=your_api_secret
