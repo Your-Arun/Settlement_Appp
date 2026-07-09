@@ -174,7 +174,7 @@ exports.autoAssign = async (req, res) => {
     const isAssigned = (id) => assignedIds.has(id.toString());
 
     // ============================================================
-    // PHASE 1: FILL PRIMARY ROLES
+    // PHASE 1: FILL PRIMARY ROLES & COMPULSORY SUPERVISOR PROMOTION
     // ============================================================
 
     // 1.1 Assign Supervisor (Primary)
@@ -189,6 +189,19 @@ exports.autoAssign = async (req, res) => {
       const a = primaryAirBoys[0];
       assignments.Air = a.toObject();
       assignedIds.add(a._id.toString());
+    }
+
+    // 1.3 Handle Supervisor Vacancy (Compulsory - Promote primary operator if no primary supervisor is present)
+    if (!assignments.Supervisor) {
+      // Prefer operator with nozzle restriction
+      const index = primaryOperators.findIndex(op => op.nozzleRestriction === true);
+      const candidate = index !== -1 ? primaryOperators.splice(index, 1)[0] : primaryOperators.shift();
+      if (candidate) {
+        const sObj = candidate.toObject();
+        sObj.promotedToSupervisor = true;
+        assignments.Supervisor = sObj;
+        assignedIds.add(candidate._id.toString());
+      }
     }
 
     // ============================================================
@@ -241,25 +254,14 @@ exports.autoAssign = async (req, res) => {
       }
     }
 
-    // Get primary operators that were not assigned to any nozzle
+    // Get primary operators that were not assigned to any nozzle or promoted to Supervisor
     const leftoverOperators = primaryOperators.filter(op => !isAssigned(op._id));
 
     // ============================================================
     // PHASE 3: INTERNAL PROMOTION & EXTRA
     // ============================================================
 
-    // 3.1 Promote to Supervisor if vacant
-    if (!assignments.Supervisor) {
-      const candidate = leftoverOperators.shift();
-      if (candidate) {
-        const sObj = candidate.toObject();
-        sObj.promotedToSupervisor = true;
-        assignments.Supervisor = sObj;
-        assignedIds.add(candidate._id.toString());
-      }
-    }
-
-    // 3.2 Promote to Air Boy if vacant
+    // 3.1 Promote to Air Boy if vacant
     if (!assignments.Air) {
       // Prefer restricted operator for Air
       const index = leftoverOperators.findIndex(op => op.nozzleRestriction === true);
@@ -272,7 +274,7 @@ exports.autoAssign = async (req, res) => {
       }
     }
 
-    // 3.3 Assign to Extra if any leftover primary operators remain
+    // 3.2 Assign to Extra if any leftover primary operators remain
     if (leftoverOperators.length > 0) {
       const extraCandidate = leftoverOperators.shift();
       assignments.Extra = extraCandidate.toObject();
