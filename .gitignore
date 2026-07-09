@@ -1,0 +1,6 @@
+# Ignore the client guide HTML file so it does not get pushed to GitHub
+Client_Guide.html
+
+# Ignore dependency directories
+node_modules/
+.env
