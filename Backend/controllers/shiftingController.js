@@ -403,6 +403,19 @@ exports.getAllMaps = async (req, res) => {
   }
 };
 
+exports.getMap = async (req, res) => {
+  try {
+    const { date, shift } = req.query;
+    if (!date || !shift) {
+      return res.status(400).json({ success: false, message: "Date and Shift are required" });
+    }
+    const map = await MapSnapshot.findOne({ date, shift });
+    res.json({ success: true, map });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 exports.deleteMap = async (req, res) => {
   try {
     await MapSnapshot.findByIdAndDelete(req.params.id);

@@ -36,6 +36,9 @@ router.post('/auto-assign', controller.autoAssign);
 // Save map snapshot
 router.post('/save-map', controller.saveMap);
 
+// Get map snapshot by date and shift
+router.get('/get-map', controller.getMap);
+
 // Get all map history
 router.get('/all-maps', controller.getAllMaps);
 

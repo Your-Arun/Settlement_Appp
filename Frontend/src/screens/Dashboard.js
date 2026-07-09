@@ -38,35 +38,82 @@ const Dashboard = () => {
   const [selectedStaffList, setSelectedStaffList] = useState([]);
   const [isAutoAssigning, setIsAutoAssigning] = useState(false);
   const MEMBERS_CACHE_KEY = 'DASHBOARD_MEMBERS_V1';
-  const ASSIGNMENTS_CACHE_KEY = 'DASHBOARD_ASSIGNMENTS_V1';
   const [showDatePicker, setShowDatePicker] = useState(false);
 
-  const loadCachedData = async () => {
+  // Load members from local cache
+  const loadCachedMembers = async () => {
     try {
       const cachedMembers = await AsyncStorage.getItem(MEMBERS_CACHE_KEY);
-      const cachedAssignments = await AsyncStorage.getItem(ASSIGNMENTS_CACHE_KEY);
-  
       if (cachedMembers) {
-        const parsedMembers = JSON.parse(cachedMembers);
-        setMembers(parsedMembers);
-  
-        const dbAbsents = parsedMembers.filter(m => m.available === 'absent');
-        setAssignments(prev => ({ ...prev, absent: dbAbsents }));
+        setMembers(JSON.parse(cachedMembers));
       }
-  
-      if (cachedAssignments) {
-        setAssignments(JSON.parse(cachedAssignments));
-      }
-  
     } catch (error) {
-      console.log("Cache Load Error", error);
+      console.log("Members Cache Load Error", error);
+    }
+  };
+
+  // Load assignments for a specific date and shift from cache
+  const loadAssignmentsFromCache = async (currentDate, currentShift) => {
+    try {
+      const cacheKey = `DASHBOARD_ASSIGNMENTS_${currentDate}_${currentShift}`;
+      const cached = await AsyncStorage.getItem(cacheKey);
+      if (cached) {
+        setAssignments(JSON.parse(cached));
+      } else {
+        // Reset to default empty assignments
+        setAssignments({
+          Supervisor: null,
+          N1: null, N2: null, N3: null, N4: null, N5: null, N6: null,
+          Extra: null, Air: null,
+          absent: []
+        });
+      }
+    } catch (error) {
+      console.log("Assignments Cache Load Error", error);
+    }
+  };
+
+  // Fetch saved map for a specific date and shift from backend
+  const fetchSavedMap = async (currentDate, currentShift) => {
+    try {
+      const res = await axiosInstance.get('/get-map', {
+        params: { date: currentDate, shift: currentShift }
+      });
+      if (res.data.success && res.data.map) {
+        const mapData = res.data.map;
+        if (mapData.assignments) {
+          // Normalize assignment IDs (make sure they have id field)
+          const normalized = { ...mapData.assignments };
+          const keys = ['Supervisor', 'Air', 'Extra', 'N1', 'N2', 'N3', 'N4', 'N5', 'N6'];
+          keys.forEach(key => {
+            if (normalized[key]) {
+              normalized[key].id = normalized[key]._id || normalized[key].id;
+            }
+          });
+          if (!normalized.absent) normalized.absent = [];
+          else {
+            normalized.absent = normalized.absent.map(m => ({ ...m, id: m._id || m.id }));
+          }
+
+          setAssignments(normalized);
+          setCaption(mapData.caption || '');
+
+          // Save to local cache
+          const cacheKey = `DASHBOARD_ASSIGNMENTS_${currentDate}_${currentShift}`;
+          await AsyncStorage.setItem(cacheKey, JSON.stringify(normalized));
+        }
+      } else {
+        setCaption('');
+      }
+    } catch (error) {
+      console.log("Error fetching map from backend", error);
     }
   };
 
   // --- DATA LOADING ---
   useFocusEffect(
     useCallback(() => {
-      loadCachedData();  
+      loadCachedMembers();  
       fetchMembers();  
     }, [])
   );
@@ -81,13 +128,18 @@ const Dashboard = () => {
       const dbAbsents = formatted.filter(m => m.available === 'absent');
       setAssignments(prev => ({ ...prev, absent: dbAbsents }));
   
-      // ✅ Save to cache
+      // Save to cache
       await AsyncStorage.setItem(MEMBERS_CACHE_KEY, JSON.stringify(formatted));
-  
     } catch (error) {
       console.log("Fetch Error", error);
     }
   };
+
+  // Sync cache and DB whenever date or shift changes
+  useEffect(() => {
+    loadAssignmentsFromCache(date, shift);
+    fetchSavedMap(date, shift);
+  }, [date, shift]);
 
   // 👇 3. Handle Date Change
   const handleDateChange = (event, selectedDate) => {
@@ -220,11 +272,12 @@ const Dashboard = () => {
   };
 
   useEffect(() => {
+    const cacheKey = `DASHBOARD_ASSIGNMENTS_${date}_${shift}`;
     AsyncStorage.setItem(
-      ASSIGNMENTS_CACHE_KEY,
+      cacheKey,
       JSON.stringify(assignments)
     );
-  }, [assignments]);
+  }, [assignments, date, shift]);
 
   const handleAutoAssign = async () => {
     setIsAutoAssigning(true);
@@ -313,45 +366,62 @@ const Dashboard = () => {
     staff.shift && staff.shift.toLowerCase() === shift.toLowerCase()
   );
 
-  const renderStaffCircle = (staff, size = 50, showBadges = false) => {
-    const isSelected = selectedStaffList.some(s => s.id === staff.id);
+  const renderStaffCircle = (staff, size = 50, showBadges = false, clickable = true) => {
+    const isSelected = clickable && selectedStaffList.some(s => s.id === staff.id);
     const isAssigned = assignedIds.includes(staff.id);
     const fontSize = size * 0.4;
 
+    const content = (
+      <>
+        {staff.avatar ? (
+          <Image
+            source={{ uri: staff.avatar }}
+            style={styles.avatar}
+            contentFit="cover"
+            transition={200}
+            cachePolicy="memory-disk"
+          />
+        ) : (
+          <View style={[styles.avatar, styles.letterAvatar]}>
+            <Text style={[styles.letterText, { fontSize: fontSize }]}>
+              {staff.name ? staff.name.charAt(0).toUpperCase() : '?'}
+            </Text>
+          </View>
+        )}
+        {isSelected && (
+          <View style={styles.checkBadge}>
+            <Check size={10} color="white" strokeWidth={4} />
+          </View>
+        )}
+        {!isSelected && isAssigned && staff.available === 'present' && clickable && (
+          <View style={styles.assignedBadge} />
+        )}
+      </>
+    );
+
     return (
       <View style={{ position: 'relative' }}>
-        <TouchableOpacity
-          onPress={() => toggleSelection(staff)}
-          style={[
-            styles.staffCircle,
-            { width: size, height: size },
-            isSelected && styles.selectedRing
-          ]}
-        >
-          {staff.avatar ? (
-            <Image
-              source={{ uri: staff.avatar }}
-              style={styles.avatar}
-              contentFit="cover"
-              transition={200}
-              cachePolicy="memory-disk"
-            />
-          ) : (
-            <View style={[styles.avatar, styles.letterAvatar]}>
-              <Text style={[styles.letterText, { fontSize: fontSize }]}>
-                {staff.name ? staff.name.charAt(0).toUpperCase() : '?'}
-              </Text>
-            </View>
-          )}
-          {isSelected && (
-            <View style={styles.checkBadge}>
-              <Check size={10} color="white" strokeWidth={4} />
-            </View>
-          )}
-          {!isSelected && isAssigned && staff.available === 'present' && (
-            <View style={styles.assignedBadge} />
-          )}
-        </TouchableOpacity>
+        {clickable ? (
+          <TouchableOpacity
+            onPress={() => toggleSelection(staff)}
+            style={[
+              styles.staffCircle,
+              { width: size, height: size },
+              isSelected && styles.selectedRing
+            ]}
+          >
+            {content}
+          </TouchableOpacity>
+        ) : (
+          <View
+            style={[
+              styles.staffCircle,
+              { width: size, height: size }
+            ]}
+          >
+            {content}
+          </View>
+        )}
         {showBadges && (
           <>
             {staff.isOvertime && (
@@ -373,7 +443,7 @@ const Dashboard = () => {
     >
       <Text style={styles.zoneLabel}>{label}</Text>
       {assignments[id] ? (
-        renderStaffCircle(assignments[id], 55, true)
+        renderStaffCircle(assignments[id], 55, true, false)
       ) : (
         <View style={styles.emptyIcon}>{icon}</View>
       )}
