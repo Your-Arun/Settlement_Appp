@@ -205,19 +205,31 @@ exports.autoAssign = async (req, res) => {
     }
 
     // ============================================================
-    // PHASE 2: OPTIMAL OPERATOR ASSIGNMENT (BACKTRACKING)
+    // PHASE 2: OPTIMAL OPERATOR ASSIGNMENT (GROUP-SPREAD BACKTRACKING)
     // ============================================================
     const nozzles = shift.toLowerCase() === 'evening'
       ? ['N5', 'N6', 'N1', 'N2', 'N3', 'N4']
       : ['N1', 'N2', 'N3', 'N4', 'N5', 'N6'];
+
+    // H-pair groups: H1/H2 = group 0, H3/H4 = group 1, H5/H6 = group 2
+    const nozzleGroup = { N1: 0, N2: 0, N3: 1, N4: 1, N5: 2, N6: 2 };
+
     let bestNozzleAssignment = {};
-    let maxNozzlesFilled = -1;
+    let bestScore = -1;
+
+    // Score = (nozzles filled * 10) + (distinct groups covered * 5)
+    // This ensures spreading across all 3 groups is preferred over clustering
+    const scoreAssignment = (assign) => {
+      const filled = Object.keys(assign).length;
+      const groups = new Set(Object.keys(assign).map(n => nozzleGroup[n]));
+      return filled * 10 + groups.size * 5;
+    };
 
     const assignNozzles = (nozzleIndex, currentAssign, assignedOperatorIds) => {
       if (nozzleIndex === nozzles.length) {
-        const filledCount = Object.keys(currentAssign).length;
-        if (filledCount > maxNozzlesFilled) {
-          maxNozzlesFilled = filledCount;
+        const score = scoreAssignment(currentAssign);
+        if (score > bestScore) {
+          bestScore = score;
           bestNozzleAssignment = { ...currentAssign };
         }
         return;
@@ -244,7 +256,7 @@ exports.autoAssign = async (req, res) => {
       assignNozzles(nozzleIndex + 1, currentAssign, assignedOperatorIds);
     };
 
-    // Run the search to find the assignment that fills the maximum nozzles
+    // Run the search to find the best spread assignment
     assignNozzles(0, {}, new Set());
 
     // Apply the best nozzle assignment
