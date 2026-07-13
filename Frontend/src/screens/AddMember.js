@@ -9,6 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import axiosInstance from '../api/axiosInstance';
 import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
+import { getOptimizedCloudinaryUrl } from '../utils/imageHelper';
 import Toast from 'react-native-toast-message';
 import { ShieldAlert } from 'lucide-react-native';
 
@@ -177,7 +178,7 @@ const AddMember = ({ navigation, route }) => {
 
   const getAvatarSource = () => {
     if (image) return { uri: image.uri };
-    if (memberToEdit?.avatar) return { uri: memberToEdit.avatar };
+    if (memberToEdit?.avatar) return { uri: getOptimizedCloudinaryUrl(memberToEdit.avatar, 120, 120, true) };
     return null;
   };
 

@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Trash2, ChevronLeft, Calendar, X, Share2 } from 'lucide-react-native';
 import { Image } from 'expo-image'; // Fast Image use karein
+import { getOptimizedCloudinaryUrl } from '../utils/imageHelper';
 import axiosInstance from '../api/axiosInstance';
 import Toast from 'react-native-toast-message';
 
@@ -95,7 +96,7 @@ const History = ({ navigation }) => {
     >
       {/* Fast Image for better performance */}
       <Image 
-        source={{ uri: item.image }} 
+        source={{ uri: getOptimizedCloudinaryUrl(item.image, 600, null, false) }} 
         style={styles.image} 
         contentFit="cover" 
         transition={300} 

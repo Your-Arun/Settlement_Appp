@@ -207,7 +207,9 @@ exports.autoAssign = async (req, res) => {
     // ============================================================
     // PHASE 2: OPTIMAL OPERATOR ASSIGNMENT (BACKTRACKING)
     // ============================================================
-    const nozzles = ['N1', 'N2', 'N3', 'N4', 'N5', 'N6'];
+    const nozzles = shift.toLowerCase() === 'evening'
+      ? ['N5', 'N6', 'N1', 'N2', 'N3', 'N4']
+      : ['N1', 'N2', 'N3', 'N4', 'N5', 'N6'];
     let bestNozzleAssignment = {};
     let maxNozzlesFilled = -1;
 

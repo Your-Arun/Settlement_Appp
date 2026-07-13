@@ -7,6 +7,7 @@ import {
     Search, Trash2, Edit3, Phone, ChevronLeft, Shield, Wind, User, Plus, ShieldAlert
 } from 'lucide-react-native';
 import { Image } from 'expo-image'; 
+import { getOptimizedCloudinaryUrl } from '../utils/imageHelper';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import axiosInstance from '../api/axiosInstance';
 import Toast from 'react-native-toast-message';
@@ -132,7 +133,7 @@ const MemberList = () => {
                     <View style={styles.avatarContainer}>
                         {item.avatar ? (
                             <Image
-                                source={{ uri: item.avatar }}
+                                source={{ uri: getOptimizedCloudinaryUrl(item.avatar, 100, 100, true) }}
                                 style={styles.avatarImage}
                                 contentFit="cover"       
                                 transition={500}          

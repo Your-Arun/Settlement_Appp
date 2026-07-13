@@ -14,6 +14,7 @@ import * as Sharing from 'expo-sharing';
 import Toast from 'react-native-toast-message';
 import { Image } from 'expo-image';
 import axiosInstance from '../api/axiosInstance';
+import { getOptimizedCloudinaryUrl } from '../utils/imageHelper';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -375,7 +376,7 @@ const Dashboard = () => {
       <>
         {staff.avatar ? (
           <Image
-            source={{ uri: staff.avatar }}
+            source={{ uri: getOptimizedCloudinaryUrl(staff.avatar, 120, 120, true) }}
             style={styles.avatar}
             contentFit="cover"
             transition={200}
