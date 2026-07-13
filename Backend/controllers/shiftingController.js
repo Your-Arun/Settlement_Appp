@@ -317,6 +317,23 @@ exports.autoAssign = async (req, res) => {
       if (assignments[nozzle]) continue; // Already filled
       if (totalOTCount >= MAX_TOTAL_OT) break;
 
+      // Apply shift-specific OT rules for H5/H6 (N5/N6)
+      if (nozzle === 'N5' || nozzle === 'N6') {
+        const currentShift = shift.toLowerCase();
+        if (currentShift === 'morning') {
+          // Morning shift: OT must never be assigned to H5 or H6
+          continue;
+        } else if (currentShift === 'evening') {
+          // Evening shift: OT can only be assigned to H5/H6 if the other is occupied by a primary shift member
+          const otherNozzle = nozzle === 'N5' ? 'N6' : 'N5';
+          const otherAssigned = assignments[otherNozzle];
+          const otherIsPrimary = otherAssigned && !otherAssigned.isOvertime;
+          if (!otherIsPrimary) {
+            continue;
+          }
+        }
+      }
+
       // Check OT Pair Blocking
       if (isAdjacentNozzleOT(nozzle, overtimeNozzles)) continue;
 
