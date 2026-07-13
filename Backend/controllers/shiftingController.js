@@ -207,8 +207,8 @@ exports.autoAssign = async (req, res) => {
     // ============================================================
     // PHASE 2: OPTIMAL OPERATOR ASSIGNMENT (GROUP-SPREAD BACKTRACKING)
     // ============================================================
-    // Both shifts: N5 → N6 → N1 → N3 → N2 → N4
-    const nozzles = ['N5', 'N6', 'N1', 'N3', 'N2', 'N4'];
+    // Both shifts: N5 → N1 → N3 → N2 → N4 → N6
+    const nozzles = ['N5', 'N1', 'N3', 'N2', 'N4', 'N6'];
 
     // H-pair groups: H1/H2 = group 0, H3/H4 = group 1, H5/H6 = group 2
     const nozzleGroup = { N1: 0, N2: 0, N3: 1, N4: 1, N5: 2, N6: 2 };
@@ -325,7 +325,7 @@ exports.autoAssign = async (req, res) => {
     const isHangingEligible = (op) => op.gender?.toLowerCase() !== 'female' && op.hangingRestriction !== true;
 
     // 4.2 Fill empty nozzles with OT (prioritizing N5/N6)
-    const nozzleOrderForOT = ['N5', 'N6', 'N1', 'N3', 'N2', 'N4'];
+    const nozzleOrderForOT = ['N5', 'N1', 'N3', 'N2', 'N4', 'N6'];
     for (const nozzle of nozzleOrderForOT) {
       if (assignments[nozzle]) continue; // Already filled
       if (totalOTCount >= MAX_TOTAL_OT) break;
