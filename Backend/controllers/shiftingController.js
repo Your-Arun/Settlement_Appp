@@ -311,17 +311,20 @@ exports.autoAssign = async (req, res) => {
       }
     }
 
-    // Pair-partner check: agar partner nozzle par koi bhi (primary ya OT) assigned hai
-    // to is nozzle par OT nahi dena — same machine par do log nahi chahiye
-    const isPartnerOccupied = (nozzleKey) => {
-      const pairs = { N1: 'N2', N2: 'N1', N3: 'N4', N4: 'N3', N5: 'N6', N6: 'N5' };
-      const partner = pairs[nozzleKey];
-      return partner && assignments[partner] != null;
+    // Adjacent OT check helper
+    const isAdjacentNozzleOT = (nozzleKey, overtimeSet) => {
+      if (nozzleKey === 'N1' && overtimeSet.has('N2')) return true;
+      if (nozzleKey === 'N2' && overtimeSet.has('N1')) return true;
+      if (nozzleKey === 'N3' && overtimeSet.has('N4')) return true;
+      if (nozzleKey === 'N4' && overtimeSet.has('N3')) return true;
+      if (nozzleKey === 'N5' && overtimeSet.has('N6')) return true;
+      if (nozzleKey === 'N6' && overtimeSet.has('N5')) return true;
+      return false;
     };
 
     const isHangingEligible = (op) => op.gender?.toLowerCase() !== 'female' && op.hangingRestriction !== true;
 
-    // 4.2 Fill empty nozzles with OT
+    // 4.2 Fill empty nozzles with OT (prioritizing N5/N6)
     const nozzleOrderForOT = ['N5', 'N1', 'N3', 'N2', 'N4', 'N6'];
     for (const nozzle of nozzleOrderForOT) {
       if (assignments[nozzle]) continue; // Already filled
@@ -344,8 +347,8 @@ exports.autoAssign = async (req, res) => {
         }
       }
 
-      // Pair blocking: agar partner (N1↔N2, N3↔N4, N5↔N6) par koi bhi hai → skip
-      if (isPartnerOccupied(nozzle)) continue;
+      // Check OT Pair Blocking
+      if (isAdjacentNozzleOT(nozzle, overtimeNozzles)) continue;
 
       const otCandidate = backupOperators.find(op => 
         !isAssigned(op._id) && 
