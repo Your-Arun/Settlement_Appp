@@ -164,8 +164,8 @@ Agar koi supervisor present NAHI hai:
 
 | Shift | Priority Order |
 |-------|----------------|
-| Morning | N1 → N2 → N3 → N4 → N5 → N6 |
-| Evening | N5 → N6 → N1 → N2 → N3 → N4 |
+| Morning | N5 → N1 → N3 → N2 → N4 → N6 |
+| Evening | N5 → N1 → N3 → N2 → N4 → N6 |
 
 > Evening shift mein H5/H6 pehle fill hote hain kyunki wo evening shift ki primary responsibility hai.
 
