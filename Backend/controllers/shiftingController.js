@@ -3,12 +3,37 @@ const MapSnapshot = require('../models/MapSnapshot');
 const Settings = require('../models/Settings');
 const { cloudinary } = require('../config/cloudinary');
 const { sendShiftReport, restartScheduler } = require('../utils/smsBot');
+const NodeCache = require('node-cache');
+
+// --- SERVER-SIDE CACHE ---
+// stdTTL = seconds before auto-expire, checkperiod = cleanup interval
+const cache = new NodeCache({ stdTTL: 60, checkperiod: 120 });
+const CACHE_KEYS = {
+  MEMBERS: 'all_members',
+  STATS: 'dashboard_stats',
+};
+
+// Helper: Invalidate member-related caches after any CRUD operation
+const invalidateMemberCache = () => {
+  cache.del(CACHE_KEYS.MEMBERS);
+  cache.del(CACHE_KEYS.STATS);
+};
 
 // --- MEMBER LOGIC (EXISTING) ---
 
 exports.listMembers = async (req, res) => {
   try {
-    const members = await Member.find().sort({ name: 1 });
+    // Check cache first
+    const cached = cache.get(CACHE_KEYS.MEMBERS);
+    if (cached) {
+      return res.json(cached);
+    }
+
+    const members = await Member.find().sort({ name: 1 }).lean();
+    
+    // Store in cache (auto-expires after 60s)
+    cache.set(CACHE_KEYS.MEMBERS, members);
+    
     res.json(members);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -32,6 +57,7 @@ exports.addMember = async (req, res) => {
     });
 
     const saved = await newMember.save();
+    invalidateMemberCache();
     res.status(201).json(saved);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -44,6 +70,7 @@ exports.updateStatus = async (req, res) => {
     const { id } = req.params;
     const { available } = req.body;
     await Member.findByIdAndUpdate(id, { available });
+    invalidateMemberCache();
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -76,6 +103,7 @@ exports.updateMember = async (req, res) => {
       { new: true, runValidators: true }
     );
 
+    invalidateMemberCache();
     res.json(updated);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -87,6 +115,7 @@ exports.deleteMember = async (req, res) => {
   try {
     const { id } = req.params;
     await Member.findByIdAndDelete(id);
+    invalidateMemberCache();
     res.json({ success: true, message: 'Member deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -136,7 +165,73 @@ exports.autoAssign = async (req, res) => {
     }
 
     // 1. FETCH DATA
-    const oppositeShift = shift.toLowerCase() === 'morning' ? 'evening' : 'morning';
+    if (shift.toLowerCase() === 'night') {
+      const h4Broken = req.body.h4Broken === true;
+      const h5Broken = req.body.h5Broken === true;
+
+      // Determine which nozzles to fill
+      const nozzleA = h4Broken ? 'N1' : 'N4';
+      const nozzleB = h5Broken ? 'N6' : 'N5';
+
+      // Find members for Night shift
+      const primaryNightStaff = shuffle(await Member.find({
+        shift: 'night',
+        available: 'present'
+      }));
+
+      // Find backup staff from other shifts for OT
+      const backupNightStaff = shuffle(await Member.find({
+        shift: { $ne: 'night' },
+        available: 'present'
+      }));
+
+      const assignments = {
+        Supervisor: null, Air: null,
+        N1: null, N2: null, N3: null, N4: null, N5: null, N6: null,
+        Extra: null
+      };
+
+      const assignedIds = new Set();
+      const fillNozzle = (nozzleKey) => {
+        // 1. Try primary staff first
+        let found = primaryNightStaff.find(m => !assignedIds.has(m._id.toString()) && canAssignToNozzle(m, nozzleKey));
+        if (found) {
+          assignments[nozzleKey] = found.toObject();
+          assignedIds.add(found._id.toString());
+          return true;
+        }
+        // 2. Try backup/OT
+        found = backupNightStaff.find(m => !assignedIds.has(m._id.toString()) && canAssignToNozzle(m, nozzleKey));
+        if (found) {
+          const otObj = found.toObject();
+          otObj.name = `${otObj.name} (OT)`;
+          otObj.isOvertime = true;
+          assignments[nozzleKey] = otObj;
+          assignedIds.add(found._id.toString());
+          return true;
+        }
+        return false;
+      };
+
+      fillNozzle(nozzleA);
+      fillNozzle(nozzleB);
+
+      const assignedCount = (assignments[nozzleA] ? 1 : 0) + (assignments[nozzleB] ? 1 : 0);
+
+      return res.json({
+        success: true,
+        data: {
+          assignments,
+          summary: {
+            assigned: assignedCount,
+            overtime: (assignments[nozzleA]?.isOvertime ? 1 : 0) + (assignments[nozzleB]?.isOvertime ? 1 : 0),
+            extra: 0,
+            supervisorPromoted: false,
+            airBoyPromoted: false
+          }
+        }
+      });
+    }
 
     const primaryStaff = await Member.find({
       shift: new RegExp(`^${shift}$`, 'i'),
@@ -144,7 +239,7 @@ exports.autoAssign = async (req, res) => {
     });
 
     const backupStaff = await Member.find({
-      shift: new RegExp(`^${oppositeShift}$`, 'i'),
+      shift: { $ne: shift.toLowerCase() },
       available: 'present'
     });
 
@@ -336,8 +431,8 @@ exports.autoAssign = async (req, res) => {
         if (currentShift === 'morning') {
           // Morning shift: OT must never be assigned to H5 or H6
           continue;
-        } else if (currentShift === 'evening') {
-          // Evening shift: OT can only be assigned to H5/H6 if the other is occupied by a primary shift member
+        } else if (currentShift === 'evening' || currentShift === 'night') {
+          // Evening/Night shift: OT can only be assigned to H5/H6 if the other is occupied by a primary shift member
           const otherNozzle = nozzle === 'N5' ? 'N6' : 'N5';
           const otherAssigned = assignments[otherNozzle];
           const otherIsPrimary = otherAssigned && !otherAssigned.isOvertime;
@@ -459,9 +554,9 @@ exports.deleteMap = async (req, res) => {
 
 exports.updateSettings = async (req, res) => {
   try {
-    const { morningTime, eveningTime } = req.body;
+    const { morningTime, eveningTime, nightTime } = req.body;
     const settings = await Settings.findOneAndUpdate({},
-      { morningTime, eveningTime },
+      { morningTime, eveningTime, nightTime },
       { new: true, upsert: true }
     );
 
@@ -487,38 +582,54 @@ exports.testSms = async (req, res) => {
 // NEW: Get Dashboard Stats
 exports.getStats = async (req, res) => {
   try {
-    const totalMembers = await Member.countDocuments();
-    const presentToday = await Member.countDocuments({ available: 'present' });
-    const absentToday = await Member.countDocuments({ available: 'absent' });
+    // Check cache first (120s TTL for stats)
+    const cached = cache.get(CACHE_KEYS.STATS);
+    if (cached) {
+      return res.json(cached);
+    }
 
-    const operators = await Member.countDocuments({ role: 'operator' });
-    const supervisors = await Member.countDocuments({ role: 'supervisor' });
-    const airBoys = await Member.countDocuments({ role: 'air boy' });
-
-    const morningShift = await Member.countDocuments({ shift: 'morning' });
-    const eveningShift = await Member.countDocuments({ shift: 'evening' });
-
-    const maleOperators = await Member.countDocuments({ role: 'operator', gender: 'male' });
-    const femaleOperators = await Member.countDocuments({ role: 'operator', gender: 'female' });
-
-    const restrictedOperators = await Member.countDocuments({
-      role: 'operator',
-      nozzleRestriction: true
-    });
-
-    res.json({
-      success: true,
-      data: {
-        total: { members: totalMembers, present: presentToday, absent: absentToday },
-        byRole: { operators, supervisors, airBoys },
-        byShift: { morning: morningShift, evening: eveningShift },
-        byGender: { male: maleOperators, female: femaleOperators },
-        restrictions: {
-          nozzle56Restricted: restrictedOperators,
-          nozzle56Eligible: maleOperators - restrictedOperators
+    // Single aggregate query instead of 9 separate countDocuments
+    const [stats] = await Member.aggregate([
+      {
+        $facet: {
+          total: [{ $count: 'count' }],
+          present: [{ $match: { available: 'present' } }, { $count: 'count' }],
+          absent: [{ $match: { available: 'absent' } }, { $count: 'count' }],
+          operators: [{ $match: { role: 'operator' } }, { $count: 'count' }],
+          supervisors: [{ $match: { role: 'supervisor' } }, { $count: 'count' }],
+          airBoys: [{ $match: { role: 'air boy' } }, { $count: 'count' }],
+          morning: [{ $match: { shift: 'morning' } }, { $count: 'count' }],
+          evening: [{ $match: { shift: 'evening' } }, { $count: 'count' }],
+          night: [{ $match: { shift: 'night' } }, { $count: 'count' }],
+          maleOps: [{ $match: { role: 'operator', gender: 'male' } }, { $count: 'count' }],
+          femaleOps: [{ $match: { role: 'operator', gender: 'female' } }, { $count: 'count' }],
+          restrictedOps: [{ $match: { role: 'operator', nozzleRestriction: true } }, { $count: 'count' }],
         }
       }
-    });
+    ]);
+
+    const getCount = (arr) => (arr && arr[0]) ? arr[0].count : 0;
+    const maleOpsCount = getCount(stats.maleOps);
+    const restrictedCount = getCount(stats.restrictedOps);
+
+    const result = {
+      success: true,
+      data: {
+        total: { members: getCount(stats.total), present: getCount(stats.present), absent: getCount(stats.absent) },
+        byRole: { operators: getCount(stats.operators), supervisors: getCount(stats.supervisors), airBoys: getCount(stats.airBoys) },
+        byShift: { morning: getCount(stats.morning), evening: getCount(stats.evening), night: getCount(stats.night) },
+        byGender: { male: maleOpsCount, female: getCount(stats.femaleOps) },
+        restrictions: {
+          nozzle56Restricted: restrictedCount,
+          nozzle56Eligible: maleOpsCount - restrictedCount
+        }
+      }
+    };
+
+    // Cache stats with 120s TTL
+    cache.set(CACHE_KEYS.STATS, result, 120);
+
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -19,7 +19,7 @@ const memberSchema = new mongoose.Schema({
   },
   shift: { 
     type: String, 
-    enum: ['morning', 'evening'], 
+    enum: ['morning', 'evening', 'night'], 
     required: true,
     lowercase: true
   },

@@ -16,8 +16,13 @@ import { Image } from 'expo-image';
 import axiosInstance from '../api/axiosInstance';
 import { getOptimizedCloudinaryUrl } from '../utils/imageHelper';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  getCachedMembers, setCachedMembers, isMembersCacheFresh, invalidateMembersCache,
+  getCachedAssignments, setCachedAssignments,
+  cleanupOldCacheKeys
+} from '../utils/cacheManager';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const Dashboard = () => {
   const navigation = useNavigation();
@@ -38,44 +43,100 @@ const Dashboard = () => {
   const [caption, setCaption] = useState('');
   const [selectedStaffList, setSelectedStaffList] = useState([]);
   const [isAutoAssigning, setIsAutoAssigning] = useState(false);
-  const MEMBERS_CACHE_KEY = 'DASHBOARD_MEMBERS_V1';
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [h4Broken, setH4Broken] = useState(false);
+  const [h5Broken, setH5Broken] = useState(false);
 
-  // Load members from local cache
-  const loadCachedMembers = async () => {
+  const loadNozzleStatus = async () => {
     try {
-      const cachedMembers = await AsyncStorage.getItem(MEMBERS_CACHE_KEY);
-      if (cachedMembers) {
-        setMembers(JSON.parse(cachedMembers));
-      }
-    } catch (error) {
-      console.log("Members Cache Load Error", error);
+      const h4 = await AsyncStorage.getItem('NOZZLE_H4_BROKEN');
+      const h5 = await AsyncStorage.getItem('NOZZLE_H5_BROKEN');
+      setH4Broken(h4 === 'true');
+      setH5Broken(h5 === 'true');
+    } catch (e) {
+      console.log(e);
     }
   };
 
-  // Load assignments for a specific date and shift from cache
-  const loadAssignmentsFromCache = async (currentDate, currentShift) => {
+  // Ref to track if initial load is done (prevent double fetch)
+  const initialLoadDone = useRef(false);
+  // Ref to track the last fetched date+shift to avoid duplicate map fetches
+  const lastFetchedMapRef = useRef('');
+
+  // --- SMART DATA LOADING ---
+  // Cache-first: show cached instantly, fetch only if stale
+
+  const loadMembers = async (forceRefresh = false) => {
+    // 1. Show cached data instantly
+    const cached = await getCachedMembers();
+    if (cached && cached.length > 0) {
+      const formatted = cached.map(m => ({ ...m, id: m._id || m.id }));
+      setMembers(formatted);
+      const dbAbsents = formatted.filter(m => m.available === 'absent');
+      setAssignments(prev => ({ ...prev, absent: dbAbsents }));
+    }
+
+    // 2. Skip API if cache is fresh (< 30s old) and not forced
+    if (!forceRefresh && isMembersCacheFresh()) {
+      return;
+    }
+
+    // 3. Fetch fresh data from API (background)
     try {
-      const cacheKey = `DASHBOARD_ASSIGNMENTS_${currentDate}_${currentShift}`;
-      const cached = await AsyncStorage.getItem(cacheKey);
-      if (cached) {
-        setAssignments(JSON.parse(cached));
-      } else {
-        // Reset to default empty assignments
-        setAssignments({
-          Supervisor: null,
-          N1: null, N2: null, N3: null, N4: null, N5: null, N6: null,
-          Extra: null, Air: null,
-          absent: []
-        });
-      }
+      const res = await axiosInstance.get('/shifting');
+      const formatted = res.data.map(m => ({ ...m, id: m._id }));
+      setMembers(formatted);
+      const dbAbsents = formatted.filter(m => m.available === 'absent');
+      setAssignments(prev => ({ ...prev, absent: dbAbsents }));
+
+      // Save to centralized cache
+      await setCachedMembers(formatted);
+
+      // Prefetch avatar images for visible members
+      prefetchAvatars(formatted.filter(m => m.available === 'present'));
     } catch (error) {
-      console.log("Assignments Cache Load Error", error);
+      console.log('Fetch Error', error);
+      // Cache already shown — user sees data even if API fails
     }
   };
 
-  // Fetch saved map for a specific date and shift from backend
-  const fetchSavedMap = async (currentDate, currentShift) => {
+  // Prefetch avatar images so they load instantly in the pool
+  const prefetchAvatars = (membersList) => {
+    const avatarUrls = membersList
+      .filter(m => m.avatar)
+      .slice(0, 15) // Prefetch max 15 avatars
+      .map(m => getOptimizedCloudinaryUrl(m.avatar, 120, 120, true));
+    
+    if (avatarUrls.length > 0) {
+      Image.prefetch(avatarUrls);
+    }
+  };
+
+  // Load assignments: cache first, then API
+  const loadAssignmentsForDateShift = async (currentDate, currentShift) => {
+    const mapKey = `${currentDate}_${currentShift}`;
+
+    // Avoid re-fetching the same date/shift
+    if (lastFetchedMapRef.current === mapKey && initialLoadDone.current) {
+      return;
+    }
+    lastFetchedMapRef.current = mapKey;
+
+    // 1. Show cached assignments instantly
+    const cached = await getCachedAssignments(currentDate, currentShift);
+    if (cached) {
+      setAssignments(prev => ({ ...prev, ...cached, absent: prev.absent }));
+    } else {
+      // Reset to empty (no cache for this date/shift)
+      setAssignments(prev => ({
+        Supervisor: null,
+        N1: null, N2: null, N3: null, N4: null, N5: null, N6: null,
+        Extra: null, Air: null,
+        absent: prev.absent
+      }));
+    }
+
+    // 2. Fetch from API (background)
     try {
       const res = await axiosInstance.get('/get-map', {
         params: { date: currentDate, shift: currentShift }
@@ -83,7 +144,6 @@ const Dashboard = () => {
       if (res.data.success && res.data.map) {
         const mapData = res.data.map;
         if (mapData.assignments) {
-          // Normalize assignment IDs (make sure they have id field)
           const normalized = { ...mapData.assignments };
           const keys = ['Supervisor', 'Air', 'Extra', 'N1', 'N2', 'N3', 'N4', 'N5', 'N6'];
           keys.forEach(key => {
@@ -96,50 +156,35 @@ const Dashboard = () => {
             normalized.absent = normalized.absent.map(m => ({ ...m, id: m._id || m.id }));
           }
 
-          setAssignments(normalized);
+          setAssignments(prev => ({ ...normalized, absent: prev.absent.length > 0 ? prev.absent : normalized.absent }));
           setCaption(mapData.caption || '');
 
-          // Save to local cache
-          const cacheKey = `DASHBOARD_ASSIGNMENTS_${currentDate}_${currentShift}`;
-          await AsyncStorage.setItem(cacheKey, JSON.stringify(normalized));
+          // Save to cache
+          await setCachedAssignments(currentDate, currentShift, normalized);
         }
       } else {
         setCaption('');
       }
     } catch (error) {
-      console.log("Error fetching map from backend", error);
+      console.log('Error fetching map from backend', error);
     }
   };
 
-  // --- DATA LOADING ---
+  // --- LIFECYCLE ---
   useFocusEffect(
     useCallback(() => {
-      loadCachedMembers();  
-      fetchMembers();  
+      if (!initialLoadDone.current) {
+        cleanupOldCacheKeys(); // One-time cleanup of old cache keys
+        initialLoadDone.current = true;
+      }
+      loadMembers(); // Smart load — skips API if cache is fresh
+      loadNozzleStatus(); // Load nozzle status from storage
     }, [])
   );
 
-  const fetchMembers = async () => {
-    try {
-      const res = await axiosInstance.get('/shifting');
-      const formatted = res.data.map(m => ({ ...m, id: m._id }));
-  
-      setMembers(formatted);
-  
-      const dbAbsents = formatted.filter(m => m.available === 'absent');
-      setAssignments(prev => ({ ...prev, absent: dbAbsents }));
-  
-      // Save to cache
-      await AsyncStorage.setItem(MEMBERS_CACHE_KEY, JSON.stringify(formatted));
-    } catch (error) {
-      console.log("Fetch Error", error);
-    }
-  };
-
-  // Sync cache and DB whenever date or shift changes
+  // Sync when date or shift changes
   useEffect(() => {
-    loadAssignmentsFromCache(date, shift);
-    fetchSavedMap(date, shift);
+    loadAssignmentsForDateShift(date, shift);
   }, [date, shift]);
 
   // 👇 3. Handle Date Change
@@ -252,7 +297,8 @@ const Dashboard = () => {
     try {
       await Promise.all(updates);
       if (zoneId === 'absent' || zoneId === 'pool') {
-        fetchMembers();
+        invalidateMembersCache(); // Mark cache as stale
+        loadMembers(true); // Force refresh
       }
       Toast.show({
         type: 'success',
@@ -272,18 +318,20 @@ const Dashboard = () => {
     setSelectedStaffList([]);
   };
 
+  // Persist assignments to cache whenever they change
   useEffect(() => {
-    const cacheKey = `DASHBOARD_ASSIGNMENTS_${date}_${shift}`;
-    AsyncStorage.setItem(
-      cacheKey,
-      JSON.stringify(assignments)
-    );
+    setCachedAssignments(date, shift, assignments);
   }, [assignments, date, shift]);
 
   const handleAutoAssign = async () => {
     setIsAutoAssigning(true);
     try {
-      const res = await axiosInstance.post('/auto-assign', { shift, date });
+      const res = await axiosInstance.post('/auto-assign', { 
+        shift, 
+        date,
+        h4Broken,
+        h5Broken
+      });
       if (res.data.success) {
         const autoData = res.data.data;
         const backendAssignments = autoData.assignments;
@@ -437,19 +485,56 @@ const Dashboard = () => {
     );
   };
 
-  const renderZone = (id, label, icon) => (
-    <TouchableOpacity
-      style={[styles.zone, assignments[id] && styles.filledZone]}
-      onPress={() => handleZoneTap(id)}
-    >
-      <Text style={styles.zoneLabel}>{label}</Text>
-      {assignments[id] ? (
-        renderStaffCircle(assignments[id], 55, true, false)
-      ) : (
-        <View style={styles.emptyIcon}>{icon}</View>
-      )}
-    </TouchableOpacity>
-  );
+  const handleNozzleLongPress = async (id) => {
+    if (id === 'N4') {
+      const newVal = !h4Broken;
+      setH4Broken(newVal);
+      await AsyncStorage.setItem('NOZZLE_H4_BROKEN', newVal ? 'true' : 'false');
+      Toast.show({
+        type: 'info',
+        text1: newVal ? '⚠️ Nozzle 4 (H4) marked as Broken' : '✅ Nozzle 4 (H4) marked as Active',
+        visibilityTime: 2500,
+        position: 'top'
+      });
+    } else if (id === 'N5') {
+      const newVal = !h5Broken;
+      setH5Broken(newVal);
+      await AsyncStorage.setItem('NOZZLE_H5_BROKEN', newVal ? 'true' : 'false');
+      Toast.show({
+        type: 'info',
+        text1: newVal ? '⚠️ Nozzle 5 (H5) marked as Broken' : '✅ Nozzle 5 (H5) marked as Active',
+        visibilityTime: 2500,
+        position: 'top'
+      });
+    }
+  };
+
+  const renderZone = (id, label, icon) => {
+    const isBroken = (id === 'N4' && h4Broken) || (id === 'N5' && h5Broken);
+    return (
+      <TouchableOpacity
+        style={[
+          styles.zone,
+          assignments[id] && styles.filledZone,
+          isBroken && styles.brokenZone
+        ]}
+        onPress={() => handleZoneTap(id)}
+        onLongPress={() => (id === 'N4' || id === 'N5') && handleNozzleLongPress(id)}
+        delayLongPress={600}
+      >
+        <Text style={[styles.zoneLabel, isBroken && styles.brokenLabel]}>
+          {isBroken ? `${label} ⚠️` : label}
+        </Text>
+        {assignments[id] ? (
+          renderStaffCircle(assignments[id], 55, true, false)
+        ) : (
+          <View style={styles.emptyIcon}>
+            {isBroken ? <Text style={{ fontSize: 16 }}>⚠️</Text> : icon}
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']} >
@@ -459,7 +544,11 @@ const Dashboard = () => {
           <Text style={styles.subtitle}>{date} • {shift}</Text>
         </View>
         <TouchableOpacity
-          onPress={() => setShift(shift === 'Morning' ? 'Evening' : 'Morning')}
+          onPress={() => {
+            const shiftCycle = ['Morning', 'Evening', 'Night'];
+            const nextIndex = (shiftCycle.indexOf(shift) + 1) % shiftCycle.length;
+            setShift(shiftCycle[nextIndex]);
+          }}
           style={styles.shiftBtn}
         >
           <RefreshCw size={16} color="white" />
@@ -707,6 +796,8 @@ const styles = StyleSheet.create({
 
   zone: { width: 60, height: 60, borderRadius: 30, borderWidth: 2, borderColor: '#cbd5e1', borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc' },
   filledZone: { borderStyle: 'solid', borderColor: '#3b82f6', backgroundColor: '#eff6ff' },
+  brokenZone: { borderColor: '#ef4444', backgroundColor: '#fef2f2', borderStyle: 'solid' },
+  brokenLabel: { backgroundColor: '#ef4444' },
   zoneLabel: { position: 'absolute', top: -8, backgroundColor: '#334155', color: 'white', fontSize: 8, paddingHorizontal: 6, borderRadius: 8, overflow: 'hidden' },
   emptyIcon: { justifyContent: 'center', alignItems: 'center' },
   staffCircle: { borderRadius: 50, overflow: 'hidden', borderWidth: 2, borderColor: 'white', backgroundColor: '#ddd', position: 'relative' },

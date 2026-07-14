@@ -11,7 +11,9 @@ import { getOptimizedCloudinaryUrl } from '../utils/imageHelper';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import axiosInstance from '../api/axiosInstance';
 import Toast from 'react-native-toast-message';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+    getCachedMembers, setCachedMembers, isMembersCacheFresh, invalidateMembersCache
+} from '../utils/cacheManager';
 
 const MemberList = () => {
     const navigation = useNavigation();
@@ -21,53 +23,66 @@ const MemberList = () => {
     const [refreshing, setRefreshing] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
 
-    const CACHE_KEY = 'MEMBERS_CACHE_V1';
+    // --- SMART DATA LOADING (shared cache with Dashboard) ---
 
-    const loadCachedMembers = async () => {
-        try {
-          const cached = await AsyncStorage.getItem(CACHE_KEY);
-          if (cached) {
-            const parsed = JSON.parse(cached);
-            setMembers(parsed);
-            setFilteredMembers(parsed);
-            setLoading(false); // show cached instantly
-          }
-        } catch (error) {
-          console.log('Cache Load Error:', error);
+    const loadMembers = async (forceRefresh = false) => {
+        // 1. Show cached data instantly
+        const cached = await getCachedMembers();
+        if (cached && cached.length > 0) {
+            const sorted = [...cached].sort((a, b) => 
+                (a.name || '').localeCompare(b.name || '')
+            );
+            setMembers(sorted);
+            setFilteredMembers(sorted);
+            setLoading(false);
         }
-      };
-    const fetchMembers = async () => {
+
+        // 2. Skip API if cache is fresh and not forced
+        if (!forceRefresh && isMembersCacheFresh()) {
+            setLoading(false);
+            setRefreshing(false);
+            return;
+        }
+
+        // 3. Fetch from API (background update)
         try {
-          const res = await axiosInstance.get('/shifting');
-          const sorted = res.data.sort((a, b) => a.name.localeCompare(b.name));
-      
-          setMembers(sorted);
-          setFilteredMembers(sorted);
-      
-          // ✅ Save to cache
-          await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(sorted));
-      
+            const res = await axiosInstance.get('/shifting');
+            const sorted = res.data.sort((a, b) => a.name.localeCompare(b.name));
+            setMembers(sorted);
+            setFilteredMembers(sorted);
+
+            // Save to shared cache
+            await setCachedMembers(sorted);
+
+            // Prefetch visible avatars
+            const avatarUrls = sorted
+                .filter(m => m.avatar)
+                .slice(0, 20)
+                .map(m => getOptimizedCloudinaryUrl(m.avatar, 100, 100, true));
+            if (avatarUrls.length > 0) {
+                Image.prefetch(avatarUrls);
+            }
         } catch (error) {
-          console.log("Fetch Error", error);
-      
-          Toast.show({
-            type: 'error',
-            text1: 'Error',
-            text2: 'Failed to load members list',
-            position: 'top'
-          });
+            console.log('Fetch Error', error);
+            if (!cached || cached.length === 0) {
+                Toast.show({
+                    type: 'error',
+                    text1: 'Error',
+                    text2: 'Failed to load members list',
+                    position: 'top'
+                });
+            }
         } finally {
-          setLoading(false);
-          setRefreshing(false);
+            setLoading(false);
+            setRefreshing(false);
         }
-      };
+    };
 
     useFocusEffect(
         useCallback(() => {
-          loadCachedMembers();
-          fetchMembers(); 
+            loadMembers();
         }, [])
-      );
+    );
 
       
     const handleSearch = (text) => {
@@ -103,7 +118,15 @@ const MemberList = () => {
                                 text2: `${name} has been removed.`,
                                 position: 'top'
                             });
-                            fetchMembers();
+
+                            // Update locally instead of full re-fetch
+                            const updatedMembers = members.filter(m => m._id !== id);
+                            setMembers(updatedMembers);
+                            setFilteredMembers(prev => prev.filter(m => m._id !== id));
+
+                            // Update shared cache
+                            await setCachedMembers(updatedMembers);
+                            invalidateMembersCache(); // Mark stale so Dashboard re-fetches
                         } catch (error) {
                             Toast.show({
                                 type: 'error',
@@ -233,7 +256,7 @@ const MemberList = () => {
                     renderItem={renderItem}
                     contentContainerStyle={styles.listContent}
                     refreshControl={
-                        <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchMembers(); }} />
+                        <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadMembers(true); }} />
                     }
                     ListEmptyComponent={
                         <View style={styles.emptyState}>

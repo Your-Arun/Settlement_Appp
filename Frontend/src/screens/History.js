@@ -2,14 +2,15 @@ import React, { useEffect, useState } from 'react';
 import { 
   View, Text, FlatList, TouchableOpacity, Alert, StyleSheet, Modal, Share 
 } from 'react-native';
-// 👇 1. Import AsyncStorage
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Trash2, ChevronLeft, Calendar, X, Share2 } from 'lucide-react-native';
-import { Image } from 'expo-image'; // Fast Image use karein
+import { Image } from 'expo-image';
 import { getOptimizedCloudinaryUrl } from '../utils/imageHelper';
 import axiosInstance from '../api/axiosInstance';
 import Toast from 'react-native-toast-message';
+import {
+  getCachedHistoryMaps, setCachedHistoryMaps, isHistoryCacheFresh
+} from '../utils/cacheManager';
 
 const History = ({ navigation }) => {
   const [maps, setMaps] = useState([]);
@@ -19,35 +20,36 @@ const History = ({ navigation }) => {
     loadMaps();
   }, []);
 
-  // ✅ New Function: Load from Cache -> Then Fetch API
   const loadMaps = async () => {
     try {
-      // 1. Pehle Local Cache se data dikhao (Instant)
-      const cachedData = await AsyncStorage.getItem('history_maps');
-      if (cachedData) {
-        setMaps(JSON.parse(cachedData));
+      // 1. Show cached data instantly
+      const cachedData = await getCachedHistoryMaps();
+      if (cachedData && cachedData.length > 0) {
+        setMaps(cachedData);
       }
 
-      // 2. Phir Network se latest data laao (Background)
-      fetchFromApi();
-      
-    } catch (error) {
-      console.log("Cache Load Error:", error);
-    }
-  };
+      // 2. Skip API if cache is fresh (< 60s)
+      if (isHistoryCacheFresh()) {
+        return;
+      }
 
-  const fetchFromApi = async () => {
-    try {
+      // 3. Fetch fresh data from API
       const res = await axiosInstance.get('/all-maps');
       if (res.data.success) {
         setMaps(res.data.maps);
-        // 3. Latest data ko cache mein save kar lo agli baar ke liye
-        await AsyncStorage.setItem('history_maps', JSON.stringify(res.data.maps));
+        await setCachedHistoryMaps(res.data.maps);
+
+        // Prefetch first 5 map images
+        const imageUrls = res.data.maps
+          .slice(0, 5)
+          .filter(m => m.image)
+          .map(m => getOptimizedCloudinaryUrl(m.image, 600, null, false));
+        if (imageUrls.length > 0) {
+          Image.prefetch(imageUrls);
+        }
       }
     } catch (error) {
-      console.log("API Error:", error);
-      // Agar API fail ho jaye, to purana data cache se dikhta rahega (User ko blank screen nahi dikhegi)
-      // Toast.show({ type: 'error', text1: 'Updating failed' });
+      console.log('History Load Error:', error);
     }
   };
 
@@ -61,12 +63,10 @@ const History = ({ navigation }) => {
           try {
             await axiosInstance.delete(`/delete-map/${id}`);
             
-            // UI Update
+            // Update UI & cache locally
             const updatedMaps = maps.filter(m => m._id !== id);
             setMaps(updatedMaps);
-            
-            // Cache Update (Delete hone ke baad cache bhi update karo)
-            await AsyncStorage.setItem('history_maps', JSON.stringify(updatedMaps));
+            await setCachedHistoryMaps(updatedMaps);
 
             Toast.show({ type: 'success', text1: 'Deleted successfully' });
           } catch (e) {
@@ -105,9 +105,9 @@ const History = ({ navigation }) => {
       <View style={styles.info}>
         <View>
             <Text style={styles.date}>{item.date}</Text>
-            <View style={[styles.badge, item.shift === 'Morning' ? styles.morning : styles.evening]}>
-                <Text style={styles.badgeText}>{item.shift}</Text>
-            </View>
+             <View style={[styles.badge, item.shift === 'Morning' ? styles.morning : item.shift === 'Evening' ? styles.evening : styles.night]}>
+                 <Text style={styles.badgeText}>{item.shift}</Text>
+             </View>
         </View>
         
         <TouchableOpacity onPress={() => handleDelete(item._id)} style={styles.delBtn}>
@@ -140,6 +140,10 @@ const History = ({ navigation }) => {
             renderItem={renderItem} 
             keyExtractor={item => item._id} 
             contentContainerStyle={{ padding: 20, paddingBottom: 50 }}
+            initialNumToRender={5}
+            maxToRenderPerBatch={3}
+            windowSize={5}
+            removeClippedSubviews={true}
           />
       )}
 
@@ -183,8 +187,9 @@ const styles = StyleSheet.create({
     info: { padding: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     date: { fontSize: 16, fontWeight: 'bold', color: '#334155' },
     badge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 5, marginTop: 5 },
-    morning: { backgroundColor: '#ffedd5' }, 
-    evening: { backgroundColor: '#e0e7ff' },
+     morning: { backgroundColor: '#ffedd5' }, 
+     evening: { backgroundColor: '#e0e7ff' },
+     night: { backgroundColor: '#f3e8ff' },
     badgeText: { fontSize: 10, fontWeight: 'bold', color: '#555' },
     caption: { paddingHorizontal: 15, paddingBottom: 15, fontStyle: 'italic', color: '#64748b', fontSize: 12 },
     delBtn: { padding: 10, backgroundColor: '#fef2f2', borderRadius: 10 },

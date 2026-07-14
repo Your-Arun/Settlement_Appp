@@ -276,7 +276,7 @@ const AddMember = ({ navigation, route }) => {
 
           <Text style={styles.label}>Shift</Text>
           <View style={styles.row}>
-            {['morning', 'evening'].map((s) => (
+            {['morning', 'evening', 'night'].map((s) => (
               <TouchableOpacity
                 key={s} onPress={() => setFormData({ ...formData, shift: s })}
                 style={[styles.chip, formData.shift === s && styles.activeChip]}

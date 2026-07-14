@@ -22,6 +22,7 @@ if (
 
 let morningTask = null;
 let eveningTask = null;
+let nightTask = null;
 
 // Helper to create WhatsApp/SMS text
 function formatMessage(date, shift, assignments, caption) {
@@ -91,6 +92,7 @@ async function restartScheduler() {
     // Stop old
     if (morningTask) morningTask.stop();
     if (eveningTask) eveningTask.stop();
+    if (nightTask) nightTask.stop();
 
     // Get Settings from DB
     let settings = await Settings.findOne();
@@ -98,11 +100,13 @@ async function restartScheduler() {
 
     const [mH, mM] = settings.morningTime.split(':');
     const [eH, eM] = settings.eveningTime.split(':');
+    const [nH, nM] = (settings.nightTime || "22:00").split(':');
 
-    console.log(`⏰ Scheduler set: Morning ${settings.morningTime}, Evening ${settings.eveningTime}`);
+    console.log(`⏰ Scheduler set: Morning ${settings.morningTime}, Evening ${settings.eveningTime}, Night ${settings.nightTime || "22:00"}`);
 
     morningTask = cron.schedule(`${mM} ${mH} * * *`, () => sendShiftReport('Morning'), { timezone: "Asia/Kolkata" });
     eveningTask = cron.schedule(`${eM} ${eH} * * *`, () => sendShiftReport('Evening'), { timezone: "Asia/Kolkata" });
+    nightTask = cron.schedule(`${nM} ${nH} * * *`, () => sendShiftReport('Night'), { timezone: "Asia/Kolkata" });
 }
 
 module.exports = { restartScheduler, sendShiftReport };
